@@ -1,11 +1,11 @@
 *.xml
 *.iml
 .idea/dictionaries
-data/gossipcop/*
+data/gnn_fake_news/gossipcop/*
 *.npy
 *.npz
 *.pt
-data/politifact/*
+data/gnn_fake_news/politifact/*
 *.zip
 data/data/README.md
 *.pyc

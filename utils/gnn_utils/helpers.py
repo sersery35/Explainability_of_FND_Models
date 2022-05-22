@@ -1,3 +1,7 @@
+"""
+helper file for loading the models in https://github.com/safe-graph/GNN-FakeNews
+"""
+
 import math
 from os import path
 from utils.gnn_utils.enums import *
@@ -12,7 +16,7 @@ import torch_geometric.transforms as T
 from torch_geometric.loader import DataLoader, DataListLoader, DenseDataLoader
 
 PROJECT_DIR = path.dirname(path.dirname(path.dirname(path.abspath(__file__))))
-DATA_DIR = PROJECT_DIR + '/data'
+DATA_DIR = PROJECT_DIR + '/data/gnn_fake_news'
 
 
 class GNNModelHelper(torch.nn.Module):

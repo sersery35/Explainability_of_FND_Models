@@ -1,3 +1,7 @@
+"""
+helper file to handle GCNFN model implementation in https://github.com/safe-graph/GNN-FakeNews
+"""
+
 import torch.nn.functional as F
 from torch.nn import Linear
 from torch_geometric.nn import global_mean_pool, GATConv

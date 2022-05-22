@@ -1,3 +1,7 @@
+"""
+helper file to handle GNNCL model implementation in https://github.com/safe-graph/GNN-FakeNews
+"""
+
 from math import ceil
 
 import torch

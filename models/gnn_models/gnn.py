@@ -1,3 +1,7 @@
+"""
+helper file to handle GNN model implementation in https://github.com/safe-graph/GNN-FakeNews
+"""
+
 import torch
 from torch_geometric.nn import GCNConv, SAGEConv, GATConv, global_max_pool
 import torch.nn.functional as F
@@ -19,7 +23,7 @@ class GNNet(GNNModelHelper):
         n_hidden = self.m_hparams.n_hidden
         num_classes = self.m_dataset_manager.num_classes
         model_type = self.m_hparams.model_type
-        
+
         if model_type == GNNModelTypeEnum.GCN_GNN:
             self.conv1 = GCNConv(num_features, n_hidden)
         elif model_type == GNNModelTypeEnum.SAGE_GNN:

@@ -1,3 +1,7 @@
+"""
+helper file to handle Bi-GCN model implementation in https://github.com/safe-graph/GNN-FakeNews
+"""
+
 import copy as cp
 
 import torch
