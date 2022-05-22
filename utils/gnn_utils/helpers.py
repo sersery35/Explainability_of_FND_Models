@@ -1,9 +1,12 @@
+import math
 from os import path
-from Explainability_of_FND_Models.utils.gnn_utils.enums import *
-from Explainability_of_FND_Models.utils.gnn_utils.data_loader import FNNDataset, DropEdge, ToUndirected
-from Explainability_of_FND_Models.utils.gnn_utils.eval_helper import *
+from utils.gnn_utils.enums import *
+from utils.gnn_utils.data_loader import FNNDataset, DropEdge, ToUndirected
+from utils.gnn_utils.eval_helper import *
 import torch.nn.functional as F
+import numpy as np
 import torch
+import shap
 
 import torch_geometric.transforms as T
 from torch_geometric.loader import DataLoader, DataListLoader, DenseDataLoader
@@ -57,51 +60,71 @@ class GNNModelHelper(torch.nn.Module):
                 loss_test += F.nll_loss(out, y).item()
         return eval_deep(out_log, loader), loss_test
 
-    def train_then_eval(self):
+    def train(self, mode=True):
         """
         extension method to train()
         """
         optimizer = self.get_optimizer()
-        self.train()
-        for epoch in range(self.m_hparams.epochs):
-            out_log = []
-            loss_train = 0.0
-            for i, data in enumerate(self.m_dataset_manager.train_loader):
-                optimizer.zero_grad()
-                if not self.m_args.multi_gpu:
-                    data = data.to(self.m_args.device)
-                if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
-                    out, _, _ = self(data.x, data.adj, data.mask)
-                else:
-                    out = self(data)
-                if self.m_args.multi_gpu:
-                    y = torch.cat([d.y for d in data]).to(out.device)
-                else:
-                    y = data.y
-                if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
-                    loss = F.nll_loss(out, y.view(-1))
-                else:
-                    loss = F.nll_loss(out, y)
-                loss.backward()
-                optimizer.step()
-                if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
-                    loss_train += data.y.size(0) * loss.item()
-                else:
-                    loss_train += loss.item()
-                out_log.append([F.softmax(out, dim=1), y])
-            acc_train, _, _, _, recall_train, auc_train, _ = eval_deep(out_log, self.m_dataset_manager.train_loader)
-            [acc_val, _, _, _, recall_val, auc_val, _], loss_val = self.compute_test(self.m_dataset_manager.val_loader)
-            print(f'\n************** epoch: {epoch} **************'
-                  f'\nloss_train: {loss_train:.4f}, acc_train: {acc_train:.4f},'
-                  f'\nrecall_train: {recall_train:.4f}, auc_train: {auc_train:.4f},'
-                  f'\nloss_val: {loss_val:.4f}, acc_val: {acc_val:.4f},'
-                  f'\nrecall_val: {recall_val:.4f}, auc_val: {auc_val:.4f}'
-                  '\n***************************************')
+        super(GNNModelHelper, self).train(mode=mode)
+        if mode:
+            for epoch in range(self.m_hparams.epochs):
+                out_log = []
+                loss_train = 0.0
+                for i, data in enumerate(self.m_dataset_manager.train_loader):
+                    optimizer.zero_grad()
+                    if not self.m_args.multi_gpu:
+                        data = data.to(self.m_args.device)
 
+                    if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
+                        out, _, _ = self(data.x, data.adj, data.mask)
+                    else:
+                        out = self(data)
+
+                    if self.m_args.multi_gpu:
+                        y = torch.cat([d.y for d in data]).to(out.device)
+                    else:
+                        y = data.y
+
+                    if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
+                        loss = F.nll_loss(out, y.view(-1))
+                    else:
+                        loss = F.nll_loss(out, y)
+
+                    loss.backward()
+                    optimizer.step()
+
+                    if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
+                        loss_train += data.y.size(0) * loss.item()
+                    else:
+                        loss_train += loss.item()
+
+                    out_log.append([F.softmax(out, dim=1), y])
+                self.m_evaluate_train(out_log, epoch, loss_train)
+            self.m_evaluate_test()
+
+    def m_evaluate_train(self, out_log, epoch, loss_train):
+        acc_train, _, _, _, recall_train, auc_train, _ = eval_deep(out_log, self.m_dataset_manager.train_loader)
+        [acc_val, _, _, _, recall_val, auc_val, _], loss_val = self.compute_test(
+            self.m_dataset_manager.val_loader)
+        print(f'\n************** epoch: {epoch} **************'
+              f'\nloss_train: {loss_train:.4f}, acc_train: {acc_train:.4f},'
+              f'\nrecall_train: {recall_train:.4f}, auc_train: {auc_train:.4f},'
+              f'\nloss_val: {loss_val:.4f}, acc_val: {acc_val:.4f},'
+              f'\nrecall_val: {recall_val:.4f}, auc_val: {auc_val:.4f}'
+              '\n***************************************')
+
+    def m_evaluate_test(self):
         [acc, f1_macro, f1_micro, precision, recall, auc, ap], test_loss = self.compute_test(
             self.m_dataset_manager.test_loader, verbose=False)
         print(f'Test set results: acc: {acc:.4f}, f1_macro: {f1_macro:.4f}, f1_micro: {f1_micro:.4f},'
               f'precision: {precision:.4f}, recall: {recall:.4f}, auc: {auc:.4f}, ap: {ap:.4f}')
+
+    def explain(self, background_data=None, test_data=None):
+        background = background_data if background_data is not None else self.m_dataset_manager.get_train_samples()
+        test = test_data if test_data is not None else self.m_dataset_manager.get_test_samples()
+        explainer = shap.DeepExplainer(self, background)
+        shap_values = explainer.shap_values(test)
+        shap.image_plot(shap_values, test)
 
 
 class ModelArguments:
@@ -115,7 +138,7 @@ class ModelArguments:
     def __init__(self, seed=777, device=DeviceTypeEnum.CPU, multi_gpu=False):
         self.seed = seed
         if not torch.cuda.is_available() and device == DeviceTypeEnum.GPU:
-            raise ValueError(f'device cannot be {DeviceTypeEnum.GPU.key}, because CUDA is not available.')
+            raise ValueError(f'device cannot be {DeviceTypeEnum.GPU}, because CUDA is not available.')
         self.device = torch.device(device.value)
         self.multi_gpu = multi_gpu
         self.setup()
@@ -138,6 +161,8 @@ class GNNDatasetManager:
     test_loader = None
     num_classes = None
     num_features = None
+    batch_size = None
+    _loader = None
 
     def __init__(self, hparam_manager, multi_gpu, root=DATA_DIR, empty=False):
         print(f"Loading data from directory: {root}")
@@ -155,14 +180,41 @@ class GNNDatasetManager:
         self.train_set, self.val_set, self.test_set = torch.utils.data.random_split(dataset,
                                                                                     [num_training, num_val, num_test])
         if multi_gpu:
-            loader = DataListLoader
+            self._loader = DataListLoader
         else:
-            loader = DataLoader
+            self._loader = DataLoader
         if hparam_manager.model_type == GNNModelTypeEnum.GNNCL:
-            loader = DenseDataLoader
-        self.train_loader = loader(self.train_set, batch_size=hparam_manager.batch_size, shuffle=True)
-        self.val_loader = loader(self.val_set, batch_size=hparam_manager.batch_size, shuffle=False)
-        self.test_loader = loader(self.test_set, batch_size=hparam_manager.batch_size, shuffle=False)
+            self._loader = DenseDataLoader
+
+        self.batch_size = hparam_manager.batch_size
+        self.train_loader = self._loader(self.train_set, batch_size=self.batch_size, shuffle=True)
+        self.val_loader = self._loader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = self._loader(self.test_set, batch_size=self.batch_size, shuffle=False)
+
+    def get_train_samples(self, len_samples=30):
+        """
+        return a subset of the train_loader for model explanation
+        """
+        train_samples = []
+        for data in enumerate(self.train_loader.dataset):
+            train_samples.append(data)
+            if len(train_samples) == len_samples:
+                break
+        print(f"{len(train_samples)} training samples are fetched.")
+        return train_samples
+
+    def get_test_samples(self, len_samples=10):
+        """
+        return a subset of the test_loader for model explanation
+        """
+        test_samples = []
+        for data in enumerate(self.test_loader.dataset):
+            test_samples.append(data)
+            if len(test_samples) == len_samples:
+                break
+        print(f"{len(test_samples)} test samples are fetched.")
+        return test_samples
+        # return self._loader(self.test_set[0:len_samples], batch_size=self.batch_size, shuffle=False)
 
 
 class HparamManager:
@@ -183,9 +235,11 @@ class HparamManager:
     concat = None
     max_nodes = None
 
-    def __init__(self, model_type: GNNModelTypeEnum):
+    def __init__(self, model_type: GNNModelTypeEnum, test_mode=False):
         self.model_type = model_type
         self._load_for_model(model_type)
+        if test_mode:
+            self._set_epochs_for_test()
 
     def set_custom(self, dataset, batch_size, lr, weight_decay, n_hidden, dropout_rates, epochs, feature,
                    transform, concat):
@@ -202,6 +256,9 @@ class HparamManager:
         self.feature = feature
         self.transform = transform
         self.concat = concat
+
+    def _set_epochs_for_test(self):
+        self.epochs = math.ceil(self.epochs / 3)
 
     def _load_for_model(self, model_type: GNNModelTypeEnum):
         """

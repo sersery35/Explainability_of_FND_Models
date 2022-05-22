@@ -1,12 +1,13 @@
 import copy as cp
 
 import torch
+from torch_geometric.loader import DataLoader, DataListLoader, DenseDataLoader
 from torch_scatter import scatter_mean
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
-from Explainability_of_FND_Models.utils.gnn_utils.data_loader import *
-from Explainability_of_FND_Models.utils.gnn_utils.helpers import GNNModelHelper
+from utils.gnn_utils.data_loader import *
+from utils.gnn_utils.helpers import GNNModelHelper
 
 
 class BUrumorGCN(torch.nn.Module):

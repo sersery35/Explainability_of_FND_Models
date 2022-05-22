@@ -2,8 +2,8 @@ import torch
 from torch_geometric.nn import GCNConv, SAGEConv, GATConv, global_max_pool
 import torch.nn.functional as F
 
-from Explainability_of_FND_Models.utils.gnn_utils.enums import GNNModelTypeEnum
-from Explainability_of_FND_Models.utils.gnn_utils.helpers import GNNModelHelper
+from utils.gnn_utils.enums import GNNModelTypeEnum
+from utils.gnn_utils.helpers import GNNModelHelper
 
 
 class GNNet(GNNModelHelper):

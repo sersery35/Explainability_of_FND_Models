@@ -1,15 +1,12 @@
 *.xml
 *.iml
 .idea/dictionaries
-data/gossipcop/raw/A.txt
+data/gossipcop/*
 *.npy
 *.npz
 *.pt
-data/politifact/raw/A.txt
+data/politifact/*
 *.zip
-data/data/gossipcop/raw/A.txt
-data/data/politifact/raw/A.txt
 data/data/README.md
-*.sh
 *.pyc
 */__pycache__/*

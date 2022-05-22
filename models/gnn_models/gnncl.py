@@ -3,7 +3,7 @@ from math import ceil
 import torch
 from torch_geometric.nn import DenseSAGEConv, dense_diff_pool
 
-from Explainability_of_FND_Models.utils.gnn_utils.helpers import *
+from utils.gnn_utils.helpers import *
 
 
 class GNN(torch.nn.Module):
