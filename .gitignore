@@ -1,12 +1,13 @@
 *.xml
 *.iml
 .idea/dictionaries
-data/gnn_fake_news/gossipcop/*
+GNNFakeNews/data/gossipcop/*
+GNNFakeNews/data/politifact/*
 *.npy
 *.npz
 *.pt
-data/gnn_fake_news/politifact/*
 *.zip
+*.csv
 data/data/README.md
 *.pyc
 */__pycache__/*

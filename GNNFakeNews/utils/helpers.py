@@ -4,11 +4,10 @@ helper file for loading the models in https://github.com/safe-graph/GNN-FakeNews
 
 import math
 from os import path
-from utils.gnn_utils.enums import *
-from utils.gnn_utils.data_loader import FNNDataset, DropEdge, ToUndirected
-from utils.gnn_utils.eval_helper import *
+from GNNFakeNews.utils.enums import *
+from GNNFakeNews.utils.data_loader import FNNDataset, DropEdge, ToUndirected
+from GNNFakeNews.utils.eval_helper import *
 import torch.nn.functional as F
-import numpy as np
 import torch
 import shap
 
@@ -16,7 +15,7 @@ import torch_geometric.transforms as T
 from torch_geometric.loader import DataLoader, DataListLoader, DenseDataLoader
 
 PROJECT_DIR = path.dirname(path.dirname(path.dirname(path.abspath(__file__))))
-DATA_DIR = PROJECT_DIR + '/data/gnn_fake_news'
+DATA_DIR = PROJECT_DIR + '/data'
 
 
 class GNNModelHelper(torch.nn.Module):
@@ -55,56 +54,58 @@ class GNNModelHelper(torch.nn.Module):
                 y = torch.cat([d.y.unsqueeze(0) for d in data]).squeeze().to(out.device)
             else:
                 y = data.y
+
             if verbose:
                 print(F.softmax(out, dim=1).cpu().numpy())
+
             out_log.append([F.softmax(out, dim=1), y])
+
             if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
                 loss_test += y.size(0) * F.nll_loss(out, y.view(-1)).item()
             else:
                 loss_test += F.nll_loss(out, y).item()
         return eval_deep(out_log, loader), loss_test
 
-    def train(self, mode=True):
+    def train_then_eval(self):
         """
         extension method to train()
         """
         optimizer = self.get_optimizer()
-        super(GNNModelHelper, self).train(mode=mode)
-        if mode:
-            for epoch in range(self.m_hparams.epochs):
-                out_log = []
-                loss_train = 0.0
-                for i, data in enumerate(self.m_dataset_manager.train_loader):
-                    optimizer.zero_grad()
-                    if not self.m_args.multi_gpu:
-                        data = data.to(self.m_args.device)
+        self.train()
+        for epoch in range(self.m_hparams.epochs):
+            out_log = []
+            loss_train = 0.0
+            for i, data in enumerate(self.m_dataset_manager.train_loader):
+                optimizer.zero_grad()
+                if not self.m_args.multi_gpu:
+                    data = data.to(self.m_args.device)
 
-                    if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
-                        out, _, _ = self(data.x, data.adj, data.mask)
-                    else:
-                        out = self(data)
+                if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
+                    out, _, _ = self(data.x, data.adj, data.mask)
+                else:
+                    out = self(data)
 
-                    if self.m_args.multi_gpu:
-                        y = torch.cat([d.y for d in data]).to(out.device)
-                    else:
-                        y = data.y
+                if self.m_args.multi_gpu:
+                    y = torch.cat([d.y for d in data]).to(out.device)
+                else:
+                    y = data.y
 
-                    if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
-                        loss = F.nll_loss(out, y.view(-1))
-                    else:
-                        loss = F.nll_loss(out, y)
+                if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
+                    loss = F.nll_loss(out, y.view(-1))
+                else:
+                    loss = F.nll_loss(out, y)
 
-                    loss.backward()
-                    optimizer.step()
+                loss.backward()
+                optimizer.step()
 
-                    if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
-                        loss_train += data.y.size(0) * loss.item()
-                    else:
-                        loss_train += loss.item()
+                if self.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
+                    loss_train += data.y.size(0) * loss.item()
+                else:
+                    loss_train += loss.item()
 
-                    out_log.append([F.softmax(out, dim=1), y])
-                self.m_evaluate_train(out_log, epoch, loss_train)
-            self.m_evaluate_test()
+                out_log.append([F.softmax(out, dim=1), y])
+            self.m_evaluate_train(out_log, epoch, loss_train)
+        self.m_evaluate_test()
 
     def m_evaluate_train(self, out_log, epoch, loss_train):
         acc_train, _, _, _, recall_train, auc_train, _ = eval_deep(out_log, self.m_dataset_manager.train_loader)
@@ -126,9 +127,9 @@ class GNNModelHelper(torch.nn.Module):
     def explain(self, background_data=None, test_data=None):
         background = background_data if background_data is not None else self.m_dataset_manager.get_train_samples()
         test = test_data if test_data is not None else self.m_dataset_manager.get_test_samples()
-        explainer = shap.DeepExplainer(self, background)
-        shap_values = explainer.shap_values(test)
-        shap.image_plot(shap_values, test)
+        explainer = shap.Explainer(self, background)
+        shap_values = explainer(test)
+        shap.plots.text(shap_values)
 
 
 class ModelArguments:
@@ -199,26 +200,17 @@ class GNNDatasetManager:
         """
         return a subset of the train_loader for model explanation
         """
-        train_samples = []
-        for data in enumerate(self.train_loader.dataset):
-            train_samples.append(data)
-            if len(train_samples) == len_samples:
-                break
-        print(f"{len(train_samples)} training samples are fetched.")
-        return train_samples
+        indices = range(0, 30)
+        for i, data in enumerate(self._loader(torch.utils.data.Subset(self.train_set, indices))):
+            return data
 
     def get_test_samples(self, len_samples=10):
         """
         return a subset of the test_loader for model explanation
         """
-        test_samples = []
-        for data in enumerate(self.test_loader.dataset):
-            test_samples.append(data)
-            if len(test_samples) == len_samples:
-                break
-        print(f"{len(test_samples)} test samples are fetched.")
-        return test_samples
-        # return self._loader(self.test_set[0:len_samples], batch_size=self.batch_size, shuffle=False)
+        indices = range(0, 10)
+        for i, data in enumerate(self._loader(torch.utils.data.Subset(self.test_set, indices))):
+            return data
 
 
 class HparamManager:
@@ -262,7 +254,7 @@ class HparamManager:
         self.concat = concat
 
     def _set_epochs_for_test(self):
-        self.epochs = math.ceil(self.epochs / 3)
+        self.epochs = math.ceil(self.epochs / 5)
 
     def _load_for_model(self, model_type: GNNModelTypeEnum):
         """

@@ -1,6 +1,6 @@
-from utils.gnn_utils.enums import GNNModelTypeEnum
-from models.gnn_models import bigcn, gcnfn, gnn, gnncl
-from utils.gnn_utils.helpers import *
+from GNNFakeNews.utils.enums import GNNModelTypeEnum
+from GNNFakeNews.models import gnn, gcnfn, bigcn, gnncl
+from GNNFakeNews.utils.helpers import ModelArguments, HparamManager, GNNDatasetManager
 
 
 def run_model(model_type: GNNModelTypeEnum, test_mode=False):
@@ -29,6 +29,6 @@ def run_model(model_type: GNNModelTypeEnum, test_mode=False):
     else:
         raise ValueError(f'Options are {GNNModelTypeEnum.all_elements()}')
 
-    model.train()
+    model.train_then_eval()
 
     return model

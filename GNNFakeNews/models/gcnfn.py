@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from torch.nn import Linear
 from torch_geometric.nn import global_mean_pool, GATConv
 
-from utils.gnn_utils.data_loader import *
-from utils.gnn_utils.helpers import GNNModelHelper
+from GNNFakeNews.utils.data_loader import *
+from GNNFakeNews.utils.helpers import GNNModelHelper
 
 
 class GCNFNet(GNNModelHelper):

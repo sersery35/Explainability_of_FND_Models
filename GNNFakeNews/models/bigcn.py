@@ -4,14 +4,12 @@ helper file to handle Bi-GCN model implementation in https://github.com/safe-gra
 
 import copy as cp
 
-import torch
-from torch_geometric.loader import DataLoader, DataListLoader, DenseDataLoader
 from torch_scatter import scatter_mean
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
-from utils.gnn_utils.data_loader import *
-from utils.gnn_utils.helpers import GNNModelHelper
+from GNNFakeNews.utils.data_loader import *
+from GNNFakeNews.utils.helpers import GNNModelHelper
 
 
 class BUrumorGCN(torch.nn.Module):

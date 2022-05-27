@@ -147,7 +147,7 @@ class DropEdge:
 
 class FNNDataset(InMemoryDataset):
     r"""
-        The Graph datasets built upon FakeNewsNet data
+        The Graph data built upon FakeNewsNet data
 
     Args:
         root (string): Root directory where the dataset should be saved.
