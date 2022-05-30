@@ -13,7 +13,7 @@ class DatasetEnum(Enum):
 
 def dataset_loader(dataset: DatasetEnum) -> (pd.DataFrame, pd.DataFrame):
     """
-    convenience wrapper to load data for Huggingface models
+    convenience wrapper to load external data for Huggingface models
     returns a tuple of true and false instances in the form of pandas dataframes
     """
     true_instance_loading_dir = path.join(PROJECT_DIR, dataset.value, TRUE_INSTANCE_DIR)
