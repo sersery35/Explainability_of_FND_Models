@@ -11,4 +11,4 @@ GNNFakeNews/data/politifact/*
 data/data/README.md
 *.pyc
 */__pycache__/*
-*/.ipynb_checkpoints/*
+*.ipynb_checkpoints/*
