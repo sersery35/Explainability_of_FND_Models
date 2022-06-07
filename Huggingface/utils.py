@@ -1,11 +1,15 @@
-import shap
+import types
+from platform import python_version
 from os import path
 from enum import Enum
 import pandas as pd
 import torch
 import transformers.pipelines
 import numpy as np
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
+import shap
 
+print(f'This project is written and tested in Python {python_version()}')
 PROJECT_DIR = path.abspath(path.dirname(__file__))
 DATA_DIR = path.join(PROJECT_DIR, 'data')
 
@@ -16,6 +20,7 @@ class DatasetTypeEnum(Enum):
         'FAKE_NEWS_DIR': 'RobertaFakeNews/Fake.csv',
         'SOURCE': 'https://www.kaggle.com/datasets/clmentbisaillon/fake-and-real-news-dataset?resource=download',
         'TEXT_COLNAME': 'text',
+        'TITLE_COLNAME': 'title',
     }
     CHINHON_FAKE_TWEET_DETECT = {
         'TRUE_NEWS_DIR': 'Chinhon_FakeTweetDetect/real_50k.csv',
@@ -29,30 +34,43 @@ class DatasetTypeEnum(Enum):
 
 
 class TransformersModelTypeEnum(Enum):
-    AN_DISTIL_BERT_FAKE_NEWS = {
-        'NAME': 'ahmednasser/DistilBert-FakeNews',
-        'LABEL_MAPPINGS': {'LABEL_0': 'Fake', 'LABEL_1': 'True'},
-        'TRAIN_DATASET': DatasetTypeEnum.ROBERTA_FAKE_NEWS
-    }
     CH_FAKE_TWEET_DETECT = {
         'NAME': 'chinhon/fake_tweet_detect',
         'LABEL_MAPPINGS': {'LABEL_0': 'True', 'LABEL_1': 'Fake'},
-        'TRAIN_DATASET': DatasetTypeEnum.CHINHON_FAKE_TWEET_DETECT
+        'TRAIN_DATASET': DatasetTypeEnum.CHINHON_FAKE_TWEET_DETECT,
+        'EXTERNAL_LINKS': [
+            'https://towardsdatascience.com/detecting-state-backed-twitter-trolls-with-transformers-5d7825945938',
+            'https://github.com/chuachinhon/transformers_state_trolls_cch']
     }
     EZ_BERT_BASE_CASED_FAKE_NEWS = {
         'NAME': 'elozano/bert-base-cased-fake-news',
         'LABEL_MAPPINGS': {'Fake': 'Fake', 'Real': 'True'},
-        'TRAIN_DATASET': DatasetTypeEnum.UNKNOWN
-    }
-    GS_ROBERTA_FAKE_NEWS = {
-        'NAME': 'ghanashyamvtatti/roberta-fake-news',
-        'LABEL_MAPPINGS': {'LABEL_0': 'Fake', 'LABEL_1': 'True'},
-        'TRAIN_DATASET': DatasetTypeEnum.ROBERTA_FAKE_NEWS
+        'TRAIN_DATASET': DatasetTypeEnum.UNKNOWN,
+        'EXTERNAL_LINKS': [],
     }
     GA_DISTIL_ROBERTA_BASE_FINETUNED_FAKE_NEWS = {
         'NAME': 'GonzaloA/distilroberta-base-finetuned-fakeNews',
         'LABEL_MAPPINGS': {'LABEL_0': 'Fake', 'LABEL_1': 'True'},
-        'TRAIN_DATASET': DatasetTypeEnum.UNKNOWN
+        'TRAIN_DATASET': DatasetTypeEnum.UNKNOWN,
+        'EXTERNAL_LINKS': [],
+    }
+    GS_ROBERTA_FAKE_NEWS = {
+        'NAME': 'ghanashyamvtatti/roberta-fake-news',
+        'LABEL_MAPPINGS': {'LABEL_0': 'Fake', 'LABEL_1': 'True'},
+        'TRAIN_DATASET': DatasetTypeEnum.ROBERTA_FAKE_NEWS,
+        'EXTERNAL_LINKS': [],
+    }
+    HB_ROBERTA_FAKE_NEWS = {
+        'NAME': 'hamzab/roberta-fake-news-classification',
+        'LABEL_MAPPINGS': {'FAKE': 'Fake', 'TRUE': 'True'},
+        'TRAIN_DATASET': DatasetTypeEnum.ROBERTA_FAKE_NEWS,
+        'EXTERNAL_LINKS': []
+    }
+    JY_FAKE_NEWS_BERT_DETECT = {
+        'NAME': 'jy46604790/Fake-News-Bert-Detect',
+        'LABEL_MAPPINGS': {'LABEL_0': 'Fake', 'LABEL_1': 'True'},
+        'TRAIN_DATASET': DatasetTypeEnum.UNKNOWN,
+        'EXTERNAL_LINKS': [],
     }
 
 
@@ -62,13 +80,19 @@ class HuggingfaceDatasetManager:
     evaluate real as True and troll as fake when working with DatasetTypeEnum.CHINHON_FAKE_TWEET_DETECT
     """
 
-    def __init__(self, dataset_type: DatasetTypeEnum, embedding_dim: int):
-        self.text_colname = dataset_type.value['TEXT_COLNAME']
-        self.embedding_dim = embedding_dim
+    def __init__(self, model_type: TransformersModelTypeEnum):
+        dataset_type = model_type.value['TRAIN_DATASET']
+        self.model_type = model_type
         true_news_file_dir = path.join(DATA_DIR, dataset_type.value['TRUE_NEWS_DIR'])
         self.true_news_df = self._load_dataframe(true_news_file_dir)
         fake_news_file_dir = path.join(DATA_DIR, dataset_type.value['FAKE_NEWS_DIR'])
         self.fake_news_df = self._load_dataframe(fake_news_file_dir)
+
+        self.text_colname = dataset_type.value['TEXT_COLNAME']
+        self.text_col_idx = np.where(self.true_news_df.columns.values == self.text_colname)[0][0]
+        if dataset_type == DatasetTypeEnum.ROBERTA_FAKE_NEWS:
+            self.title_colname = dataset_type.value['TITLE_COLNAME']
+            self.title_col_idx = np.where(self.true_news_df.columns.values == self.title_colname)[0][0]
 
     @staticmethod
     def _load_dataframe(dir: str):
@@ -92,8 +116,18 @@ class HuggingfaceDatasetManager:
         idxs = np.random.randint(low=0, high=df_len - 1, size=sample_count) if sample_random else \
             list(range(0, sample_count))
         print(f"Getting the following indexes: {idxs}")
-        # we need to trim the original text before feeding it to the Explainer
-        return dataframe[self.text_colname].map(lambda x: x[:self.embedding_dim]).iloc[idxs].values
+
+        return dataframe.iloc[idxs].apply(self._transform, axis=1)[self.text_colname].values
+
+    def _transform(self, row):
+        if self.model_type == TransformersModelTypeEnum.HB_ROBERTA_FAKE_NEWS:
+            title_token = '<title> '
+            content_token = ' <content> '
+            end_token = ' <end>'
+            text_title_part = title_token + row[self.title_col_idx]
+            text_content_part = content_token + row[self.text_col_idx]
+            row[self.text_col_idx] = text_title_part + text_content_part + end_token
+        return row
 
     def _fetch_samples_with_text(self, from_true_news: bool, text: str, sample_count: int, sample_random: bool):
         df = self._fetch_rows_with_text(text, from_true_news=from_true_news)
@@ -112,32 +146,90 @@ class HuggingfaceDatasetManager:
         return self._fetch_samples(self.fake_news_df, sample_count, sample_random)
 
 
-def explain_text(model_type: TransformersModelTypeEnum, pipeline: transformers.pipelines.Pipeline, text: str,
+class ModelManager:
+    """
+    class that loads all models from Huggingface and manages various tasks
+    """
+
+    def __init__(self, model_type: TransformersModelTypeEnum):
+        self.model_type = model_type
+        model_name = model_type.value['NAME']
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+        print(f'Using device: {device}')
+        model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if model_type == TransformersModelTypeEnum.HB_ROBERTA_FAKE_NEWS:
+            self.pipeline = FakeNewsPipelineForHamzaB(model=model, tokenizer=tokenizer, return_all_scores=True,
+                                                      device=0)
+        else:
+            self.pipeline = TextClassificationPipeline(model=model, tokenizer=tokenizer, return_all_scores=True,
+                                                       device=0)
+        # force the pipeline preprocess to truncate the outputs for convenience
+        self.pipeline.preprocess = types.MethodType(custom_preprocess, self.pipeline)
+
+
+def explain_text(model_manager: ModelManager, text: str,
                  algorithm="auto", output_names=None):
     """
     method returns the shapley values for the given pipeline
     only works with transformers pipeline for now. not tested in other models.
     """
     output_names = output_names if output_names is not None else list(
-        model_type.value['LABEL_MAPPINGS'].values())
+        model_manager.model_type.value['LABEL_MAPPINGS'].values())
     print(
         'Explaining the following text: \n'
         '<--------------------------------------------------------------------------------------------->'
         f'\n{text}\n'
         '<--------------------------------------------------------------------------------------------->')
-    predict_with_correct_labels(model_type, pipeline, text)
-    explainer = shap.Explainer(pipeline, output_names=output_names, algorithm=algorithm)
+    predict_with_correct_labels(model_manager, text)
+    explainer = shap.Explainer(model=model_manager.pipeline, output_names=output_names, algorithm=algorithm)
     shap_values = explainer([text])
     shap.text_plot(shap_values)
     return shap_values, explainer
 
 
-def predict_with_correct_labels(model_type: TransformersModelTypeEnum, pipeline: transformers.pipelines.Pipeline,
-                                text: str):
-    label_mapping = model_type.value['LABEL_MAPPINGS']
-    raw_predictions = pipeline([text])[0]
+def predict_with_correct_labels(model_manager: ModelManager, text: str):
+    label_mapping = model_manager.model_type.value['LABEL_MAPPINGS']
+    raw_predictions = model_manager.pipeline([text])[0]
+    print(raw_predictions)
     for label_score_map in raw_predictions:
         print(f"Predicted {label_mapping[label_score_map['label']]} with score: {label_score_map['score']}")
+
+
+def custom_preprocess(self, inputs, **tokenizer_kwargs):
+    return_tensors = self.framework
+    model_inputs = self.tokenizer(inputs, truncation=True, return_tensors=return_tensors, **tokenizer_kwargs)
+    return model_inputs
+
+
+class FakeNewsPipelineForHamzaB(transformers.TextClassificationPipeline):
+    """
+    custom pipeline for the model TransformersModelTypeEnum.HB_ROBERTA_FAKE_NEWS
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def postprocess(self, model_outputs, function_to_apply=None, return_all_scores=True):
+        assert function_to_apply is None, 'If you want to use another function, please use TextClassificationPipeline instead.'
+        outputs = model_outputs["logits"][0].numpy()
+        scores = transformers.pipelines.text_classification.softmax(outputs)
+
+        if self.model.config.label2id is None:
+            # there is no label2id in the model config so we create it
+            label2id = {}
+            for id, label in self.model.config.id2label.items():
+                label2id[label] = id
+            self.model.config.label2id = label2id
+            assert self.model.config.label2id is not None, 'Updating label2id in model config failed.'
+        if return_all_scores:
+            return [{"label": self.model.config.id2label[i], "score": score.item()} for i, score in
+                    enumerate(scores)]
+        else:
+            return {"label": self.model.config.id2label[scores.argmax().item()], "score": scores.max().item()}
 
 
 # This will not work with string data, must pass tokenized data to use this class.
