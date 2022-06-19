@@ -39,7 +39,8 @@ class GNNet(GNNModelHelper):
 
         self.lin2 = torch.nn.Linear(n_hidden, num_classes)
 
-    def forward(self, data):
+    """
+    def forward(self, data, **kwargs):
 
         x, edge_index, batch = data.x, data.edge_index, data.batch
 
@@ -57,3 +58,20 @@ class GNNet(GNNModelHelper):
         x = F.log_softmax(self.lin2(x), dim=-1)
 
         return x
+    """
+
+    def forward(self, x, edge_index, batch):
+        h = self.conv1(x, edge_index).relu()
+        h = global_max_pool(h, batch)
+
+        if self.m_hparams.concat:
+            # Get the root node (tweet) features of each graph:
+            root = (batch[1:] - batch[:-1]).nonzero(as_tuple=False).view(-1)
+            root = torch.cat([root.new_zeros(1), root + 1], dim=0)
+            news = x[root]
+
+            news = self.lin0(news).relu()
+            h = self.lin1(torch.cat([news, h], dim=-1)).relu()
+
+        h = self.lin2(h)
+        return h.log_softmax(dim=-1)

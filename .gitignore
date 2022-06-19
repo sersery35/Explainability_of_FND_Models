@@ -1,8 +1,8 @@
 *.xml
 *.iml
 .idea/dictionaries
-GNNFakeNews/data/gossipcop/*
-GNNFakeNews/data/politifact/*
+GNNFakeNews/data/local/gossipcop/*
+GNNFakeNews/data/local/politifact/*
 *.npy
 *.npz
 *.pt

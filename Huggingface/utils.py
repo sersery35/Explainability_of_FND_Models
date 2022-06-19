@@ -110,14 +110,14 @@ class HuggingfaceDatasetManager:
         idxs = df[self.text_colname].map(lambda x: text in x)
         return df[idxs]
 
-    def _fetch_samples(self, dataframe, sample_count: int, sample_random: bool):
+    def _fetch_samples(self, dataframe, sample_count: int, sample_random: bool) -> list:
         df_len = len(dataframe)
         # if the indexes are not randomized the first "sample_count" rows will be selected.
-        idxs = np.random.randint(low=0, high=df_len - 1, size=sample_count) if sample_random else \
+        idxs = np.random.randint(low=0, high=df_len - 1, size=sample_count).tolist() if sample_random else \
             list(range(0, sample_count))
         print(f"Getting the following indexes: {idxs}")
 
-        return dataframe.iloc[idxs].apply(self._transform, axis=1)[self.text_colname].values
+        return dataframe.iloc[idxs].apply(self._transform, axis=1)[self.text_colname].values.tolist()
 
     def _transform(self, row):
         if self.model_type == TransformersModelTypeEnum.HB_ROBERTA_FAKE_NEWS:
@@ -133,16 +133,16 @@ class HuggingfaceDatasetManager:
         df = self._fetch_rows_with_text(text, from_true_news=from_true_news)
         return self._fetch_samples(df, sample_count, sample_random)
 
-    def fetch_true_samples_with_text(self, text: str, sample_count=10, sample_random=True):
+    def fetch_true_samples_with_text(self, text: str, sample_count=3, sample_random=True):
         return self._fetch_samples_with_text(True, text, sample_count, sample_random)
 
-    def fetch_fake_samples_with_text(self, text: str, sample_count=10, sample_random=True):
+    def fetch_fake_samples_with_text(self, text: str, sample_count=3, sample_random=True):
         return self._fetch_samples_with_text(False, text, sample_count, sample_random)
 
-    def fetch_true_samples(self, sample_count=10, sample_random=True):
+    def fetch_true_samples(self, sample_count=3, sample_random=True):
         return self._fetch_samples(self.true_news_df, sample_count, sample_random)
 
-    def fetch_fake_samples(self, sample_count=10, sample_random=True):
+    def fetch_fake_samples(self, sample_count=3, sample_random=True):
         return self._fetch_samples(self.fake_news_df, sample_count, sample_random)
 
 
@@ -171,32 +171,29 @@ class ModelManager:
         self.pipeline.preprocess = types.MethodType(custom_preprocess, self.pipeline)
 
 
-def explain_text(model_manager: ModelManager, text: str,
-                 algorithm="auto", output_names=None):
+def explain_texts(model_manager: ModelManager, texts: list,
+                  algorithm="auto", output_names=None):
     """
-    method returns the shapley values for the given pipeline
+    method plots the text_plot for the given texts based on their SHAP values.
     only works with transformers pipeline for now. not tested in other models.
     """
     output_names = output_names if output_names is not None else list(
         model_manager.model_type.value['LABEL_MAPPINGS'].values())
-    print(
-        'Explaining the following text: \n'
-        '<--------------------------------------------------------------------------------------------->'
-        f'\n{text}\n'
-        '<--------------------------------------------------------------------------------------------->')
-    predict_with_correct_labels(model_manager, text)
+    predict_multiple_with_correct_labels(model_manager, texts)
     explainer = shap.Explainer(model=model_manager.pipeline, output_names=output_names, algorithm=algorithm)
-    shap_values = explainer([text])
+    shap_values = explainer(texts)
     shap.text_plot(shap_values)
-    return shap_values, explainer
+    # return shap_values, explainer
 
 
-def predict_with_correct_labels(model_manager: ModelManager, text: str):
+def predict_multiple_with_correct_labels(model_manager: ModelManager, texts: list):
     label_mapping = model_manager.model_type.value['LABEL_MAPPINGS']
-    raw_predictions = model_manager.pipeline([text])[0]
-    print(raw_predictions)
-    for label_score_map in raw_predictions:
-        print(f"Predicted {label_mapping[label_score_map['label']]} with score: {label_score_map['score']}")
+    raw_predictions = model_manager.pipeline(texts)
+    for i, raw_pred in enumerate(raw_predictions):
+        for label_score_map in raw_pred:
+            print(f"Sample {i} is predicted {label_mapping[label_score_map['label']]} "
+                  f"with score: {label_score_map['score']}")
+        print("###################################################################")
 
 
 def custom_preprocess(self, inputs, **tokenizer_kwargs):
@@ -214,7 +211,8 @@ class FakeNewsPipelineForHamzaB(transformers.TextClassificationPipeline):
         super().__init__(**kwargs)
 
     def postprocess(self, model_outputs, function_to_apply=None, return_all_scores=True):
-        assert function_to_apply is None, 'If you want to use another function, please use TextClassificationPipeline instead.'
+        assert function_to_apply is None, 'If you want to use another function, ' \
+                                          'please use TextClassificationPipeline instead.'
         outputs = model_outputs["logits"][0].numpy()
         scores = transformers.pipelines.text_classification.softmax(outputs)
 
