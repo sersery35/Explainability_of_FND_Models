@@ -253,27 +253,17 @@ class HparamFactory:
     concat = None
     max_nodes = None
 
-    def __init__(self, model_type: GNNModelTypeEnum, test_mode=False):
+    def __init__(self, model_type: GNNModelTypeEnum, test_mode=False, **kwargs):
         self.model_type = model_type
         self._load_for_model(model_type)
         if test_mode:
             self._set_epochs_for_test()
 
-    def set_custom(self, dataset, batch_size, lr, weight_decay, n_hidden, dropout_rates, epochs, feature,
-                   transform, concat):
-        """
-        set custom values regardless of the preset values
-        """
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.lr = lr
-        self.weight_decay = weight_decay
-        self.n_hidden = n_hidden
-        self.dropout_rates = dropout_rates
-        self.epochs = epochs
-        self.feature = feature
-        self.transform = transform
-        self.concat = concat
+        for key in self.__dict__.keys():
+            print(f'Key: {key}')
+            if key in kwargs.keys():
+                value = kwargs.pop(key, None)
+                setattr(self, key, value)
 
     def _set_epochs_for_test(self):
         self.epochs = math.ceil(self.epochs / 5)

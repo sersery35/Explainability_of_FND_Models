@@ -7,12 +7,13 @@ from GNNFakeNews.models import gnn, gcnfn, bigcn, gnncl
 from GNNFakeNews.utils.helpers import ModelArguments, HparamFactory, GNNDatasetManager
 
 
-def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_manager=False, local_load=True):
+def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_manager=False, local_load=True,
+              hyperparams=None):
     """
     method is a convenient wrapper to initialize, train then evaluate the model
     """
     args = ModelArguments()
-    hparams = HparamFactory(model_type, test_mode=test_mode)
+    hparams = HparamFactory(model_type, test_mode=test_mode) if hyperparams is None else hyperparams
     dataset_manager = GNNDatasetManager(local_load=local_load, hparam_manager=hparams, multi_gpu=args.multi_gpu)
     if model_type == GNNModelTypeEnum.BIGCN:
         model = bigcn.BiGCNet(model_args=args,
