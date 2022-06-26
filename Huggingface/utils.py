@@ -170,20 +170,44 @@ class ModelManager:
         # force the pipeline preprocess to truncate the outputs for convenience
         self.pipeline.preprocess = types.MethodType(custom_preprocess, self.pipeline)
 
+    def explain_texts(self, texts: list, algorithm="auto", output_names=None, visualize=True):
+        """
+        method plots the text_plot for the given texts based on their SHAP values.
+        only works with transformers pipeline for now. not tested in other models.
+        """
+        output_names = output_names if output_names is not None else list(
+            self.model_type.value['LABEL_MAPPINGS'].values())
+        predict_multiple_with_correct_labels(self, texts)
+        explainer = shap.Explainer(model=self.pipeline, output_names=output_names, algorithm=algorithm)
+        shap_values = explainer(texts)
+        if visualize:
+            shap.text_plot(shap_values)
+        return shap_values, explainer
 
-def explain_texts(model_manager: ModelManager, texts: list,
-                  algorithm="auto", output_names=None):
-    """
-    method plots the text_plot for the given texts based on their SHAP values.
-    only works with transformers pipeline for now. not tested in other models.
-    """
-    output_names = output_names if output_names is not None else list(
-        model_manager.model_type.value['LABEL_MAPPINGS'].values())
-    predict_multiple_with_correct_labels(model_manager, texts)
-    explainer = shap.Explainer(model=model_manager.pipeline, output_names=output_names, algorithm=algorithm)
-    shap_values = explainer(texts)
-    shap.text_plot(shap_values)
-    return shap_values, explainer
+
+def get_most_important_n_tokens(shap_values_dict, is_sample_fake=False, n=5):
+    # we keep this sum to understand how much of the overall is made up by the important ones.
+    tokenized_input = shap_values_dict.data
+    base_values = shap_values_dict.base_values
+    print(f'Base values are: {base_values[0]} and  {base_values[1]}')
+    label = 0 if is_sample_fake else 1
+    shap_values = shap_values_dict.values[:, label]
+
+    first_n_important_indexes = np.argsort(shap_values)[-n:]
+    first_n_important_shap_values = shap_values[first_n_important_indexes]
+    for idx in first_n_important_indexes:
+        print(f'\n--> "{tokenized_input[idx]}" with shap value: {shap_values[idx]}')
+
+    n_cumulative_importance = np.sum(first_n_important_shap_values, axis=0)
+    # we take only the positive values for comparison. This value is very close to base_values[0]
+    positive_shap_values_sum = np.sum(shap_values[np.where(shap_values > 0)], axis=0)
+    print(f'\nAll {n} tokens are {n * 100 / shap_values.shape[0]}% of all tokens.\nTheir cumulative importance is '
+          f'{n_cumulative_importance}.\nThis value shows that '
+          f'{n_cumulative_importance * 100 / positive_shap_values_sum}% of cumulative importance of all positive '
+          f'contributing tokens ({positive_shap_values_sum}) are these {n} tokens.\n')
+    print("###################################################################")
+
+    return tokenized_input[first_n_important_indexes], first_n_important_shap_values
 
 
 def predict_multiple_with_correct_labels(model_manager: ModelManager, texts: list):
