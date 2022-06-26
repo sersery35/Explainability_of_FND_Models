@@ -17,8 +17,8 @@ class GNNet(GNNModelHelper):
 
     """
 
-    def __init__(self, model_args, model_hparams, model_dataset_manager):
-        super(GNNet, self).__init__(model_args, model_hparams, model_dataset_manager)
+    def __init__(self, model_args, model_hparams, model_dataset_manager, verbose):
+        super(GNNet, self).__init__(model_args, model_hparams, model_dataset_manager, verbose)
         num_features = self.m_dataset_manager.num_features
         n_hidden = self.m_hparams.n_hidden
         num_classes = self.m_dataset_manager.num_classes

@@ -56,8 +56,8 @@ class GNNCLNet(GNNModelHelper):
      Link: https://arxiv.org/pdf/2007.03316.pdf
      """
 
-    def __init__(self, model_args, model_hparams, model_dataset_manager, in_channels=3, num_classes=6):
-        super(GNNCLNet, self).__init__(model_args, model_hparams, model_dataset_manager)
+    def __init__(self, model_args, model_hparams, model_dataset_manager, verbose):
+        super(GNNCLNet, self).__init__(model_args, model_hparams, model_dataset_manager, verbose)
 
         num_nodes = ceil(0.25 * self.m_hparams.max_nodes)
         in_channels = self.m_dataset_manager.num_features

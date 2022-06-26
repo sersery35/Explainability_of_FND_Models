@@ -30,11 +30,12 @@ class GNNModelHelper(torch.nn.Module):
     m_hparams = None
     m_dataset_manager = None
 
-    def __init__(self, model_args, model_hparams, model_dataset_manager):
+    def __init__(self, model_args, model_hparams, model_dataset_manager, verbose=True):
         super(GNNModelHelper, self).__init__()
         self.m_args = model_args
         self.m_hparams = model_hparams
         self.m_dataset_manager = model_dataset_manager
+        self.verbose = verbose
 
     def get_optimizer(self):
         """
@@ -106,14 +107,15 @@ class GNNModelHelper(torch.nn.Module):
 
     def m_evaluate_train(self, out_log, epoch, loss_train):
         acc_train, _, _, _, recall_train, auc_train, _ = eval_deep(out_log, self.m_dataset_manager.train_loader)
-        [acc_val, _, _, _, recall_val, auc_val, _], loss_val = self.compute_test(
-            self.m_dataset_manager.val_loader)
-        print(f'\n************** epoch: {epoch} **************'
-              f'\nloss_train: {loss_train:.4f}, acc_train: {acc_train:.4f},'
-              f'\nrecall_train: {recall_train:.4f}, auc_train: {auc_train:.4f},'
-              f'\nloss_val: {loss_val:.4f}, acc_val: {acc_val:.4f},'
-              f'\nrecall_val: {recall_val:.4f}, auc_val: {auc_val:.4f}'
-              '\n***************************************')
+        [acc_val, _, _, _, recall_val, auc_val, _], loss_val = self.compute_test(self.m_dataset_manager.val_loader)
+
+        if self.verbose:
+            print(f'\n************** epoch: {epoch} **************'
+                  f'\nloss_train: {loss_train:.4f}, acc_train: {acc_train:.4f},'
+                  f'\nrecall_train: {recall_train:.4f}, auc_train: {auc_train:.4f},'
+                  f'\nloss_val: {loss_val:.4f}, acc_val: {acc_val:.4f},'
+                  f'\nrecall_val: {recall_val:.4f}, auc_val: {auc_val:.4f}'
+                  '\n***************************************')
 
     def m_evaluate_test(self):
         [acc, f1_macro, f1_micro, precision, recall, auc, ap], test_loss = self.compute_test(
@@ -183,8 +185,8 @@ class GNNDatasetManager:
 
     def local_load(self, hparam_manager, root, empty):
         root = path.join(root, LOCAL_DATA_FOLDER)
-        print(f"Loading data from directory: {root}")
-        dataset = FNNDataset(root=root, feature=hparam_manager.feature, name=hparam_manager.dataset.value,
+        print(f"Loading dataset '{hparam_manager.dataset.value}' from directory: {root}")
+        dataset = FNNDataset(root=root, feature=hparam_manager.feature.value, name=hparam_manager.dataset.value,
                              transform=hparam_manager.transform, pre_transform=hparam_manager.pre_transform,
                              empty=empty)
 
@@ -197,7 +199,7 @@ class GNNDatasetManager:
         self.train_set, self.val_set, self.test_set = torch.utils.data.random_split(dataset,
                                                                                     [num_training, num_val, num_test])
 
-    def remote_load(self, hparam_manager, root, empty):
+    def remote_load(self, hparam_manager, root):
         # load the dataset from torch_geometric.datasets and follow:
         # https://github.com/pyg-team/pytorch_geometric/blob/master/examples/upfd.py
         root = path.join(root, REMOTE_DATA_FOLDER)
@@ -260,10 +262,18 @@ class HparamFactory:
             self._set_epochs_for_test()
 
         for key in self.__dict__.keys():
-            print(f'Key: {key}')
             if key in kwargs.keys():
                 value = kwargs.pop(key, None)
                 setattr(self, key, value)
+
+        if self.dataset == GNNDatasetTypeEnum.GOSSIPCOP and model_type == GNNModelTypeEnum.GNNCL:
+            self.max_nodes = 200
+
+        print('#################################')
+        print('-----> The hyperparameters are set!')
+        for key in self.__dict__.keys():
+            print(f'{key} = {getattr(self, key)}')
+        print('#################################')
 
     def _set_epochs_for_test(self):
         self.epochs = math.ceil(self.epochs / 5)
@@ -296,17 +306,17 @@ class HparamFactory:
             'BUdroprate': 0.2,
         }
         self.epochs = 45
-        self.feature = GNNFeatureTypeEnum.PROFILE.value
+        self.feature = GNNFeatureTypeEnum.PROFILE
         self.transform = DropEdge(self.dropout_rates['TDdroprate'], self.dropout_rates['BUdroprate'])
 
     def _load_for_upfd_gcnfn(self):
         self._load_for_gcnfn()
-        self.feature = GNNFeatureTypeEnum.SPACY.value
+        self.feature = GNNFeatureTypeEnum.SPACY
         self.concat = False
 
     def _load_for_vanilla_gcnfn(self):
         self._load_for_gcnfn()
-        self.feature = GNNFeatureTypeEnum.CONTENT.value
+        self.feature = GNNFeatureTypeEnum.CONTENT
         self.concat = True
 
     def _load_for_gcnfn(self):
@@ -325,7 +335,7 @@ class HparamFactory:
         self.weight_decay = 0.01
         self.n_hidden = 128
         self.epochs = 35
-        self.feature = GNNFeatureTypeEnum.BERT.value
+        self.feature = GNNFeatureTypeEnum.BERT
         self.concat = True
         self.transform = ToUndirected()
 
@@ -336,8 +346,8 @@ class HparamFactory:
         # self.weight_decay = 0.001 # set in args but never used in the original implementation
         self.n_hidden = 128
         self.epochs = 60
-        self.feature = GNNFeatureTypeEnum.PROFILE.value
-        self.max_nodes = 500  # 200 if self.dataset == GNNDatasetTypeEnum.GOSSIPCOP
+        self.feature = GNNFeatureTypeEnum.PROFILE
+        self.max_nodes = 500
         self.transform = T.ToDense(self.max_nodes)
         self.pre_transform = ToUndirected()
 

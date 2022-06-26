@@ -28,8 +28,8 @@ class GCNFNet(GNNModelHelper):
 
     """
 
-    def __init__(self, model_args, model_hparams, model_dataset_manager):
-        super(GCNFNet, self).__init__(model_args, model_hparams, model_dataset_manager)
+    def __init__(self, model_args, model_hparams, model_dataset_manager, verbose):
+        super(GCNFNet, self).__init__(model_args, model_hparams, model_dataset_manager, verbose)
 
         num_features = self.m_dataset_manager.num_features
         num_classes = self.m_dataset_manager.num_classes

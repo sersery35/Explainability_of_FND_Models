@@ -183,7 +183,7 @@ def explain_texts(model_manager: ModelManager, texts: list,
     explainer = shap.Explainer(model=model_manager.pipeline, output_names=output_names, algorithm=algorithm)
     shap_values = explainer(texts)
     shap.text_plot(shap_values)
-    # return shap_values, explainer
+    return shap_values, explainer
 
 
 def predict_multiple_with_correct_labels(model_manager: ModelManager, texts: list):

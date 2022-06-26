@@ -91,8 +91,8 @@ class BiGCNet(GNNModelHelper):
 
     """
 
-    def __init__(self, model_args, model_hparams, model_dataset_manager):
-        super(BiGCNet, self).__init__(model_args, model_hparams, model_dataset_manager)
+    def __init__(self, model_args, model_hparams, model_dataset_manager, verbose):
+        super(BiGCNet, self).__init__(model_args, model_hparams, model_dataset_manager, verbose)
         hid_feats = out_feats = self.m_hparams.n_hidden
         in_feats = self.m_dataset_manager.num_features
         self.TDrumorGCN = TDrumorGCN(in_feats, hid_feats, out_feats)
