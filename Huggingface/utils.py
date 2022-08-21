@@ -145,6 +145,18 @@ class HuggingfaceDatasetManager:
     def fetch_fake_samples(self, sample_count=3, sample_random=True):
         return self._fetch_samples(self.fake_news_df, sample_count, sample_random)
 
+    def fetch_random_samples(self, sample_count=200):
+        # add labels for explanation
+        true_samples_with_labels = self.true_news_df.copy().sample(int(sample_count / 2))
+        true_samples_with_labels['label'] = 1
+        fake_samples_with_labels = self.fake_news_df.copy().sample(int(sample_count / 2))
+        fake_samples_with_labels['label'] = 0
+
+        # concatenate dataframes then shuffle
+        shuffled_df = pd.concat([true_samples_with_labels, fake_samples_with_labels]).sample(frac=1)
+
+        return shuffled_df['label'], self._fetch_samples(shuffled_df, sample_count, False)
+
 
 class ModelManager:
     """
@@ -185,12 +197,15 @@ class ModelManager:
         return shap_values, explainer
 
 
-def get_most_important_n_tokens(shap_values_dict, is_sample_fake=False, n=5):
+def get_most_important_n_tokens(shap_values_dict, label, n=5):
+    '''
+    collect n most important tokens from the shap_values_dict
+    '''
     # we keep this sum to understand how much of the overall is made up by the important ones.
     tokenized_input = shap_values_dict.data
     base_values = shap_values_dict.base_values
     print(f'Base values are: {base_values[0]} and  {base_values[1]}')
-    label = 0 if is_sample_fake else 1
+
     shap_values = shap_values_dict.values[:, label]
 
     first_n_important_indexes = np.argsort(shap_values)[-n:]

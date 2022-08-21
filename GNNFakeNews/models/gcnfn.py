@@ -47,21 +47,23 @@ class GCNFNet(GNNModelHelper):
 
         self.fc2 = Linear(n_hidden, num_classes)
 
-    def forward(self, data):
-        x, edge_index, batch = data.x, data.edge_index, data.batch
+    def forward(self, x, edge_index, batch):
+        # x, edge_index, batch = data.x, data.edge_index, data.batch
 
-        x = F.selu(self.conv1(x, edge_index))
-        x = F.selu(self.conv2(x, edge_index))
-        x = F.selu(global_mean_pool(x, batch))
-        x = F.selu(self.fc1(x))
-        x = F.dropout(x, p=0.5, training=self.training)
+        h = F.selu(self.conv1(x, edge_index))
+        h = F.selu(self.conv2(h, edge_index))
+        h = F.selu(global_mean_pool(h, batch))
+        h = F.selu(self.fc1(h))
+        h = F.dropout(h, p=0.5, training=self.training)
 
         if self.m_hparams.concat:
-            news = torch.stack([data.x[(data.batch == idx).nonzero().squeeze()[0]] for idx in range(data.num_graphs)])
+            root = (batch[1:] - batch[:-1]).nonzero(as_tuple=False).view(-1)
+            root = torch.cat([root.new_zeros(1), root + 1], dim=0)
+            news = x[root]
             news = F.relu(self.fc0(news))
-            x = torch.cat([x, news], dim=1)
-            x = F.relu(self.fc1(x))
+            h = torch.cat([h, news], dim=1)
+            h = F.relu(self.fc1(h))
 
-        x = F.log_softmax(self.fc2(x), dim=-1)
+        h = F.log_softmax(self.fc2(h), dim=-1)
 
-        return x
+        return h

@@ -27,22 +27,24 @@ class BUrumorGCN(torch.nn.Module):
         rootindex = data.root_index
         root_extend = torch.zeros(len(data.batch), x1.size(1)).to(rootindex.device)
         batch_size = max(data.batch) + 1
+
         for num_batch in range(batch_size):
             index = (torch.eq(data.batch, num_batch))
             root_extend[index] = x1[rootindex[num_batch]]
-        x = torch.cat((x, root_extend), 1)
 
+        x = torch.cat((x, root_extend), 1)
         x = F.relu(x)
         x = F.dropout(x, training=self.training)
         x = self.conv2(x, edge_index)
         x = F.relu(x)
         root_extend = torch.zeros(len(data.batch), x2.size(1)).to(rootindex.device)
+
         for num_batch in range(batch_size):
             index = (torch.eq(data.batch, num_batch))
             root_extend[index] = x2[rootindex[num_batch]]
         x = torch.cat((x, root_extend), 1)
-
         x = scatter_mean(x, data.batch, dim=0)
+
         return x
 
 
@@ -57,6 +59,7 @@ class TDrumorGCN(torch.nn.Module):
         x1 = cp.copy(x.float())
         x = self.conv1(x, edge_index)
         x2 = cp.copy(x)
+
         rootindex = data.root_index
         root_extend = torch.zeros(len(data.batch), x1.size(1)).to(rootindex.device)
         batch_size = max(data.batch) + 1
@@ -64,13 +67,14 @@ class TDrumorGCN(torch.nn.Module):
         for num_batch in range(batch_size):
             index = (torch.eq(data.batch, num_batch))
             root_extend[index] = x1[rootindex[num_batch]]
-        x = torch.cat((x, root_extend), 1)
 
+        x = torch.cat((x, root_extend), 1)
         x = F.relu(x)
         x = F.dropout(x, training=self.training)
         x = self.conv2(x, edge_index)
         x = F.relu(x)
         root_extend = torch.zeros(len(data.batch), x2.size(1)).to(rootindex.device)
+
         for num_batch in range(batch_size):
             index = (torch.eq(data.batch, num_batch))
             root_extend[index] = x2[rootindex[num_batch]]
