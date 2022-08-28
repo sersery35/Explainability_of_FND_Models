@@ -12,7 +12,17 @@ import re
 shap.initjs()
 
 
-def barplot_token_shap_values(tokens, shap_values, label):
+def barplot_token_shap_values(tokens: list, shap_values: list, label: int):
+    """plot the tokens against their shap values as a horizontal barplot
+    Parameters
+    ----------
+    tokens: list(str)
+        list of tokens to be visualized
+    shap_values: list(int),
+        list of shap values of the tokens
+    label: int,
+        label of the current sample whose tokens and shap values will be visualized.
+    """
     fig, ax = plot.subplots(figsize=(12, 8))
     if label == 0:
         label_color = 'red'
@@ -45,9 +55,18 @@ def barplot_token_shap_values(tokens, shap_values, label):
     plot.show()
 
 
-def get_most_important_n_tokens(shap_values_dict, label, n=5, verbose=False):
-    """
-    collect n most important tokens from the shap_values_dict
+def get_most_important_n_tokens(shap_values_dict, label, n=10, verbose=False):
+    """collect n most important tokens from the shap_values_dict
+    Parameters
+    ----------
+    shap_values_dict: dict
+        the shap values of the sample
+    label: int
+        the actual label of the sample
+    n: int
+        how many tokens to get. The default is 10
+    verbose: bool,
+        whether to print out additional information. The default is False
     """
     # we keep this sum to understand how much of the overall is made up by the important ones.
     tokenized_input = shap_values_dict.data
@@ -79,11 +98,15 @@ def get_most_important_n_tokens(shap_values_dict, label, n=5, verbose=False):
 
 
 def barplot_first_n_largest_shap_values(shap_values, label, n=10):
-    """
-    wrapper method for plotting the most important n tokens
-    shap_values: dict, the shap values of the sample
-    label: int, the actual label of the sample
-    n: int, how many tokens to barplot
+    """wrapper method for plotting the most important n tokens
+    Parameters
+    ----------
+    shap_values: dict
+        the shap values of the sample
+    label: int
+        the actual label of the sample
+    n: int
+        how many tokens to barplot. The default is 10
     """
     tokens, s_values = get_most_important_n_tokens(shap_values, label=label, n=n)
     barplot_token_shap_values(tokens, s_values, label)
@@ -99,7 +122,15 @@ def custom_preprocess(self, inputs, **tokenizer_kwargs):
 
 
 class FakeNewsExplainer:
-    def __init__(self, model):
+    def __init__(self, model: dict):
+        """Class handles all code heavy tasks and returns meaningful data and visualizations for convenience.
+        Parameters
+        ----------
+        model: dict
+            a dict with following keys: 'NAME', 'LABEL_MAPPINGS', 'DATASET'
+        """
+        self.tokenizer = None
+        self.model = None
         self.pipeline = None
         self.label_mappings = model['LABEL_MAPPINGS']
         self.dataset = load_dataset(model['DATASET'])
@@ -108,102 +139,124 @@ class FakeNewsExplainer:
         self.load_model(model['NAME'])
         self.explainer = shap.Explainer(self.pipeline)
 
-    def load_model(self, model_name):
-        """
-        load model to the device and create the pipeline that will be used in the explanation
+    def load_model(self, model_name: str):
+        """load model to the device and create the pipeline that will be used in the explanation
+        Parameters
+        ----------
+        model_name: str
+            the model name in huggingface transformers repository
         """
         if torch.cuda.is_available():
             device = torch.device('cuda')
         else:
             device = torch.device('cpu')
         print(f'Using device: {device}')
-        model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        pipeline = TextClassificationPipeline(model=model, tokenizer=tokenizer, return_all_scores=True,
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer, return_all_scores=True,
                                               device=0)
         pipeline.preprocess = types.MethodType(custom_preprocess, pipeline)
 
         self.pipeline = shap.models.TransformersPipeline(pipeline)
 
     def get_random_samples(self, n=10, split='train', should_contain_word='') -> (list, list):
-        """
-        n: int, the number of samples to be retrieved
-        split: str, can be 'train', 'validation', or 'test'.  which split to get samples from.
-        should_contain_word: str, the word required to be in the samples. If the required word is not in any of the
-        entries, then we return an empty list
-        method returns the samples and their labels as builtin python lists: (list, list)
+        """returns the samples and their labels as builtin python lists: (list, list)
+        Parameters
+        ----------
+        n : int
+            the number of samples to be retrieved, The default is 10
+        split : str
+            can be 'train', 'validation', or 'test'.  which split to get samples from. The default is 'train'
+        should_contain_word : str
+            the word required to be in the samples. If the required word is not in any of the entries, then we return an
+            empty list, The default is ''
         """
         ds = self.dataset.get(split)
         if should_contain_word != '':
             ds = ds.filter(lambda row: should_contain_word in row['text'])
         indexes = np.random.randint(low=0, high=len(ds) - 1, size=n)
-        # can use shuffle and pick the first 200 as well, i.e., samples.shuffle().select(indices=indexes)
+        # can use shuffle and pick the first 200 as well, i.e., samples.shuffle()[:200]
         random_samples = ds.select(indices=indexes)
         # now we need to transform Huggingface dataset to a python list
         random_samples_pd = random_samples.to_pandas()
         return random_samples_pd['text'].values.tolist(), random_samples_pd['label'].values.tolist()
 
-    def explain_samples(self, samples: list, labels: list, split='train', should_contain_word='',
-                        text_plot=False, bar_plot=False, n_most_important_tokens=10):
-        """
-        samples: list of strings, strings to be explained
-        labels: list of integers, labels of samples
-        split: str, can be 'train', 'validation', or 'test'.  which split to get samples from.
-        should_contain_word: str, the word required to be in the samples. If the required word is not in any of the
-        entries, then we return an empty list
-        text_plot: bool, whether to show the shap.text_plot() of the samples.
-        bar_plot: bool, whether to show the most important n_most_important_tokens tokens
-        n_most_important_tokens: int, number of tokens to display in the bar plot
-        method returns the shap values of random samples
+    def explain_samples(self, samples: list, labels: list, text_plot=True, bar_plot=True, n_most_important_tokens=10):
+        """returns the shap values of random samples
+        Parameters
+        ----------
+        samples: list(str)
+            strings to be explained
+        labels: list(int)
+            labels of samples
+        text_plot: bool
+            whether to show the shap.text_plot() of the samples. The default is True
+        bar_plot: bool
+            whether to show the most important n_most_important_tokens tokens. The default is True
+        n_most_important_tokens: int
+            number of tokens to display in the bar plot. The default is 10
         """
         shap_values = self.explainer(samples)
         for i, val in enumerate(shap_values):
-            self.print_predictions_for_sample(samples[i], labels[i])
+            pred = self.print_predictions_for_sample(samples[i], labels[i])
             if bar_plot:
-                barplot_first_n_largest_shap_values(val, labels[i], n=n_most_important_tokens)
+                barplot_first_n_largest_shap_values(val, pred, n=n_most_important_tokens)
             print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
             if text_plot:
                 shap.plots.text(val[:, labels[i]])
             print('###################################################################################################')
         return shap_values
 
-    def print_predictions_for_sample(self, sample, label=None):
-        """
-        convenience method for printing out the prediction probabilities
-        sample: str, the sample to be predicted by the model
-        label: int, the actual label of the sample. leave empty when predicting a sample without a label, i.e., test
-        data
+    def predict_sample(self, sample: str, label=None, verbose=True) -> int:
+        """convenience method for printing out the prediction probabilities
+        Parameters
+        ----------
+        sample: str
+            the sample to be predicted by the model
+        label: int
+            the actual label of the sample. leave empty when predicting a sample without a label, i.e., test data
+        verbose: bool,
+            whether to print out the prediction vs actual information, the default is True
         """
         pred = self.pipeline([sample])
         fake_prob = pred[:, 0]
         real_prob = pred[:, 1]
-        print('###################################################################################################')
-        print(f'Predicted fake with {fake_prob}')
-        print(f'Predicted real with {real_prob}')
-        if label is not None:
-            print(f'The actual value is {self.label_mappings[label]}')
-        print('---------------------------------------------------------------------------------------------------')
+        if verbose:
+            print('###################################################################################################')
+            print(f'Predicted fake with {fake_prob}')
+            print(f'Predicted real with {real_prob}')
+            if label is not None:
+                print(f'The actual value is {self.label_mappings[label]}')
+            print('---------------------------------------------------------------------------------------------------')
+        return 1 if real_prob > fake_prob else 0
 
     @staticmethod
     def perturb_sample(sample: str, perturbation_type='add', position=0, target_string=None,
                        new_string=None, replace_all=True, replace_until_position=0):
         """
-        sample: str, string to be perturbed
-        perturbation_type: str, one of 'add', 'delete', 'replace', type of perturbation method
-        position: int, index of which occurrence to remove, if 0 then add to the beginning, if -1 add to the end
-        note that this position is the index of the characters not tokenized words.
-        target_string: str, the target string to be replaced
-        new_string: str, the new string that will either
-        i. be added to perturbation_location of the sample
-        ii. replace the target_string
-        replace_all: bool, if True, and if perturbation_type is 'replace' or 'delete' then replaces/deletes all
-        occurrences.
-        if False, replaces/deletes the first occurrence
-        replace_until_position: int, starting from the first, until how many occurrences should the target_string in
-        sample be replaced/deleted.
         when perturbation_type is 'add' then the method adds new_string to the given perturbation_location
         when perturbation_type is 'delete' then the method removes target_string from the given sample
         when perturbation_type is 'replace' then the method replaces the target_string with new_string.
+        Parameters
+        ----------
+        sample: str
+            string to be perturbed
+        perturbation_type: str
+            one of 'add', 'delete', 'replace', type of perturbation method
+        position: int
+            index of which occurrence to remove, if 0 then add to the beginning, if -1 add to the end
+            note that this position is the index of the characters not tokenized words.
+        target_string: str
+            the target string to be replaced
+        new_string: str
+            the new string that will either
+            i. be added to perturbation_location of the sample
+            ii. replace the target_string
+        replace_all: bool
+            if True, and if perturbation_type is 'replace' or 'delete' then replaces/deletes all occurrences.
+            if False, replaces/deletes the first occurrence
+        replace_until_position: int
+            starting from the first, until how many occurrences should the target_string in sample be replaced/deleted.
         """
         perturbation_types = ['add', 'delete', 'replace']
         assert perturbation_type in perturbation_types, f'parameter perturbation_types can only take values: ' \
