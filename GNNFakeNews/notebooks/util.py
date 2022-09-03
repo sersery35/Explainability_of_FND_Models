@@ -1,17 +1,36 @@
-import matplotlib.pyplot as plt
-import torch
-import numpy as np
-from torch_geometric.nn import GNNExplainer
-
 from GNNFakeNews.utils.enums import GNNModelTypeEnum
-from GNNFakeNews.models import gnn, gcnfn, bigcn, gnncl
-from GNNFakeNews.utils.helpers import ModelArguments, HparamFactory, GNNDatasetManager
+from GNNFakeNews.models import gcnfn, gnncl
+from GNNFakeNews.models.deprecated import bigcn, gnn
+from GNNFakeNews.utils.helpers import ModelArguments, HparamFactory, GNNDatasetManager, DATA_DIR
+import pickle
+from os import path
+
+
+# from ipywidgets import interact, interactive, fixed, interact_manual
+# import ipywidgets as widgets
+# import os
+# import json
 
 
 def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_manager=True, local_load=True,
               hparams=None, verbose=False):
     """
     method is a convenient wrapper to initialize, train then evaluate the model
+    Parameters
+    ----------
+    model_type: GNNModelTypeEnum,
+        the model type to be run
+    test_mode: bool,
+        when set to true, runs 1/5 of the original epochs in the hyperparameter settings
+    return_dataset_manager: bool,
+        when true, returns the respective instance of GNNDatasetManager with the model
+    local_load: bool,
+        when true, loads the dataset from local resources, when false downloads the UPFD dataset.
+    hparams: HparamFactory,
+        the hyperparameters of the model, when None, the default hyperparameters are used.
+    verbose: bool,
+        when true, outputs more information about the process.
+
     """
     args = ModelArguments()
     model_hparams = HparamFactory(model_type, test_mode=test_mode) if hparams is None else hparams
@@ -42,56 +61,85 @@ def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_mana
     return model
 
 
-def visualize_label_distribution(labels: torch.tensor):
-    labels_np = labels.cpu().numpy()
-    unique_labels = np.unique(labels_np)
-
-    fig = plt.figure(figsize=(5, 5))
-
-    ax = fig.add_axes([0, 0, 1, 1])
-    for unique_label in unique_labels:
-        occurrence_count = len(np.where(labels_np == unique_label)[0])
-        ax.bar_label(ax.bar(unique_label, occurrence_count))
-
-    plt.title('Label distribution')
-    ax.set_xticks(unique_labels)
-
-    plt.show()
+def load_pkl_file(file_name: str):
+    """
+    read and return a .pkl file
+    """
+    with open(path.join(DATA_DIR, file_name), 'rb') as f:
+        data = pickle.load(f)
+    return data
 
 
-def visualize_edge_mask(edge_mask: torch.tensor):
-    edge_mask_np = edge_mask.cpu().numpy()
-    plt.figure(figsize=(8, 15))
-
-    indexes = np.arange(0, len(edge_mask_np))
-    plt.scatter(x=indexes, y=edge_mask_np)
-    plt.title('Edge mask distribution')
-    plt.show()
+'''
+from networkx.readwrite import json_graph
 
 
-class GNNModelExplainer:
-    def __init__(self, model, sample_data, visualize_explaining_graph=True, visualize_label_dist=True,
-                 visualize_edge_mask_dist=False):
+def save_mask(G, fname, logdir, expdir, fmt='json', suffix=''):
+    pth = os.path.join(logdir, expdir, fname + '-filt-' + suffix + '.' + fmt)
+    if fmt == 'json':
+        dt = json_graph.node_link_data(G)
+        with open(pth, 'w') as f:
+            json.dump(dt, f)
+    elif fmt == 'pdf':
+        plt.savefig(pth)
+    elif fmt == 'npy':
+        np.save(pth, nx.to_numpy_array(G))
 
-        # pick the root node since it is the news itself, all leaf nodes are the users who shared this news
-        self.node_idx = 0
 
-        x, edge_index, batch, num_graphs = sample_data.x, sample_data.edge_index, sample_data.batch, sample_data.num_graphs
-        self.gnn_explainer = GNNExplainer(model, epochs=200).to(model.m_args.device)
-        self.node_feat_mask, self.edge_mask = self.gnn_explainer.explain_graph(x=x, edge_index=edge_index)
-        # print(f'x.size: {x.size()}\nedge_index.size: {edge_index.size()}\nnum_graphs: {num_graphs}\ny.size: {sample_data.y.size()}')
+def show_adjacency_full(logdir, expdir, mask, ax=None):
+    adj = np.load(os.path.join(logdir, expdir, mask), allow_pickle=True)
+    if ax is None:
+        plt.figure()
+        plt.imshow(adj);
+    else:
+        ax.imshow(adj)
+    return adj
 
-        if visualize_explaining_graph:
-            plt.figure(figsize=(20, 20))
-            ax, self.subgraph = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
-                                                                      edge_index=edge_index.cpu(),
-                                                                      edge_mask=self.edge_mask.cpu(),
-                                                                      # y=sample_data.y,
-                                                                      node_size=600, font_size=15)
-            plt.show()
 
-        if visualize_label_dist:
-            visualize_label_distribution(sample_data.y)
+def read_adjacency_full(logdir, expdir, mask, ax=None):
+    adj = np.load(os.path.join(logdir, expdir, mask), allow_pickle=True)
+    return adj
 
-        if visualize_edge_mask_dist:
-            visualize_edge_mask(self.edge_mask)
+
+@interact
+def filter_adj(mask, thresh=0.5):
+    filt_adj = read_adjacency_full(mask)
+    filt_adj[filt_adj < thresh] = 0
+    return filt_adj
+
+
+# EDIT THIS INDEX
+MASK_IDX = 0
+
+
+# EDIT THIS INDEX
+
+# m = masks[MASK_IDX]
+# adj = read_adjacency_full(m)
+
+
+@interact(thresh=widgets.FloatSlider(value=0.5, min=0.0, max=1.0, step=0.01))
+def plot_interactive(m, thresh=0.5):
+    filt_adj = read_adjacency_full(m)
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+    plt.title(str(m));
+
+    # Full adjacency
+    ax1.set_title('Full Adjacency mask')
+    adj = show_adjacency_full(m, ax=ax1);
+
+    # Filtered adjacency
+    filt_adj[filt_adj < thresh] = 0
+    ax2.set_title('Filtered Adjacency mask');
+    ax2.imshow(filt_adj);
+
+    # Plot subgraph
+    ax3.set_title("Subgraph")
+    G_ = nx.from_numpy_array(adj)
+    G = nx.from_numpy_array(filt_adj)
+    G.remove_nodes_from(list(nx.isolates(G)))
+    nx.draw(G, ax=ax3)
+    save_mask(G, fname=m, fmt='json')
+
+    print("Removed {} edges -- K = {} remain.".format(G_.number_of_edges() - G.number_of_edges(), G.number_of_edges()))
+    print("Removed {} nodes -- K = {} remain.".format(G_.number_of_nodes() - G.number_of_nodes(), G.number_of_nodes()))'''

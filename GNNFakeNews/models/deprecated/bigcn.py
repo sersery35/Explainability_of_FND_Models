@@ -18,32 +18,33 @@ class BUrumorGCN(torch.nn.Module):
         self.conv1 = GCNConv(in_feats, hid_feats)
         self.conv2 = GCNConv(hid_feats + in_feats, out_feats)
 
-    def forward(self, data):
-        x, edge_index = data.x, data.BU_edge_index
+    def forward(self, x, bu_edge_index, batch, root_index):
+        # x, edge_index = data.x, data.BU_edge_index
         x1 = cp.copy(x.float())
-        x = self.conv1(x, edge_index)
+        x = self.conv1(x, bu_edge_index)
         x2 = cp.copy(x)
 
-        rootindex = data.root_index
-        root_extend = torch.zeros(len(data.batch), x1.size(1)).to(rootindex.device)
-        batch_size = max(data.batch) + 1
+        # root_index = data.root_index
+        # root_index = (batch[1:] - batch[:-1]).nonzero(as_tuple=False).view(-1)
+        root_extend = torch.zeros(len(batch), x1.size(1)).to(root_index.device)
+        batch_size = max(batch) + 1
 
         for num_batch in range(batch_size):
-            index = (torch.eq(data.batch, num_batch))
-            root_extend[index] = x1[rootindex[num_batch]]
+            index = (torch.eq(batch, num_batch))
+            root_extend[index] = x1[root_index[num_batch]]
 
         x = torch.cat((x, root_extend), 1)
         x = F.relu(x)
         x = F.dropout(x, training=self.training)
-        x = self.conv2(x, edge_index)
+        x = self.conv2(x, bu_edge_index)
         x = F.relu(x)
-        root_extend = torch.zeros(len(data.batch), x2.size(1)).to(rootindex.device)
+        root_extend = torch.zeros(len(batch), x2.size(1)).to(root_index.device)
 
         for num_batch in range(batch_size):
-            index = (torch.eq(data.batch, num_batch))
-            root_extend[index] = x2[rootindex[num_batch]]
+            index = (torch.eq(batch, num_batch))
+            root_extend[index] = x2[root_index[num_batch]]
         x = torch.cat((x, root_extend), 1)
-        x = scatter_mean(x, data.batch, dim=0)
+        x = scatter_mean(x, batch, dim=0)
 
         return x
 
@@ -54,32 +55,32 @@ class TDrumorGCN(torch.nn.Module):
         self.conv1 = GCNConv(in_feats, hid_feats)
         self.conv2 = GCNConv(hid_feats + in_feats, out_feats)
 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
+    def forward(self, x, edge_index, batch, root_index):
         x1 = cp.copy(x.float())
         x = self.conv1(x, edge_index)
         x2 = cp.copy(x)
 
-        rootindex = data.root_index
-        root_extend = torch.zeros(len(data.batch), x1.size(1)).to(rootindex.device)
-        batch_size = max(data.batch) + 1
+        # root_index = data.root_index
+        # root_index = (batch[1:] - batch[:-1]).nonzero(as_tuple=False).view(-1)
+        root_extend = torch.zeros(len(batch), x1.size(1)).to(root_index.device)
+        batch_size = max(batch) + 1
 
         for num_batch in range(batch_size):
-            index = (torch.eq(data.batch, num_batch))
-            root_extend[index] = x1[rootindex[num_batch]]
+            index = (torch.eq(batch, num_batch))
+            root_extend[index] = x1[root_index[num_batch]]
 
         x = torch.cat((x, root_extend), 1)
         x = F.relu(x)
         x = F.dropout(x, training=self.training)
         x = self.conv2(x, edge_index)
         x = F.relu(x)
-        root_extend = torch.zeros(len(data.batch), x2.size(1)).to(rootindex.device)
+        root_extend = torch.zeros(len(batch), x2.size(1)).to(root_index.device)
 
         for num_batch in range(batch_size):
-            index = (torch.eq(data.batch, num_batch))
-            root_extend[index] = x2[rootindex[num_batch]]
+            index = (torch.eq(batch, num_batch))
+            root_extend[index] = x2[root_index[num_batch]]
         x = torch.cat((x, root_extend), 1)
-        x = scatter_mean(x, data.batch, dim=0)
+        x = scatter_mean(x, batch, dim=0)
 
         return x
 
@@ -103,9 +104,17 @@ class BiGCNet(GNNModelHelper):
         self.BUrumorGCN = BUrumorGCN(in_feats, hid_feats, out_feats)
         self.fc = torch.nn.Linear((out_feats + hid_feats) * 2, 2)
 
-    def forward(self, data):
+    """def forward(self, data):
         TD_x = self.TDrumorGCN(data)
         BU_x = self.BUrumorGCN(data)
+        x = torch.cat((TD_x, BU_x), 1)
+        x = self.fc(x)
+        x = F.log_softmax(x, dim=1)
+        return x"""
+
+    def forward(self, x, edge_index, batch, bu_edge_index, root_index):
+        TD_x = self.TDrumorGCN(x, edge_index, batch, root_index)
+        BU_x = self.BUrumorGCN(x, bu_edge_index, batch, root_index)
         x = torch.cat((TD_x, BU_x), 1)
         x = self.fc(x)
         x = F.log_softmax(x, dim=1)
