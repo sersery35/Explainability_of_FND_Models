@@ -140,25 +140,24 @@ class GNNDatasetManager:
         """
         assert len_samples <= len(dataset)
         samples = []
+        # collect the current dataset's indices in the whole dataset
+        idxs_set = dataset.indices
         if label is not None:
-            indexes = []
-            # collect the current datasets indices in the whole dataset
-            idxs_set = dataset.indices
             # collect the instances from the whole dataset
             idxs_label = np.where(dataset.dataset.data.y == label)
             # get the intersection of the two arrays to get the desired set
             idxs = np.intersect1d(idxs_set, idxs_label)
             # we now need to get the location of these indexes in the given set
-            for i in idxs:
-                indexes.append(np.where(idxs_set == i)[0][0])
+            # for i in idxs:
+            #    indexes.append(np.where(idxs_set == i)[0][0])
             # randomly select from prepared indexes
-            indexes = np.random.choice(indexes, len_samples)
+            indexes = np.random.choice(idxs, len_samples, replace=False)
         else:
-            indexes = np.random.random_integers(0, len(dataset) - 1, len_samples)
+            indexes = np.random.choice(idxs_set, len_samples, replace=False)
         print(f'Choosing indexes: {indexes}')
-        dataset = torch.utils.data.Subset(dataset, indexes)
+        dataset = torch.utils.data.Subset(dataset.dataset, indexes)
 
-        for i, data in enumerate(dataset):
+        for data in dataset:
             samples.append(data.to(device))
         if return_indexes:
             return samples, indexes

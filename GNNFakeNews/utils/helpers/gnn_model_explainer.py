@@ -83,7 +83,8 @@ class GNNModelExplainer:
         """
         node_ids = []
         for entry in self.subgraph.nodes.items():
-            node_ids.append(entry[0])
+            if entry[0] != 0:
+                node_ids.append(entry[0])
         return node_ids
 
     def visualize_label_dist(self):
