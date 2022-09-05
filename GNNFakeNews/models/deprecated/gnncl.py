@@ -4,9 +4,11 @@ helper file to handle GNNCL model implementation in https://github.com/safe-grap
 
 from math import ceil
 
+import torch
 from torch_geometric.nn import DenseSAGEConv, dense_diff_pool
 
-from GNNFakeNews.utils.helpers import *
+from GNNFakeNews.utils.helpers.gnn_model_helper import GNNModelHelper
+import torch.nn.functional as F
 
 
 class GNN(torch.nn.Module):

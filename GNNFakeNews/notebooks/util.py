@@ -1,15 +1,22 @@
-from GNNFakeNews.utils.enums import GNNModelTypeEnum
-from GNNFakeNews.models import gcnfn, gnncl
-from GNNFakeNews.models.deprecated import bigcn, gnn
-from GNNFakeNews.utils.helpers import ModelArguments, HparamFactory, GNNDatasetManager, DATA_DIR
+from GNNFakeNews.utils.enums import GNNModelTypeEnum, GNNDatasetTypeEnum
+from GNNFakeNews.models import gcnfn
+from GNNFakeNews.models.deprecated import bigcn, gnn, gnncl
+from GNNFakeNews.utils.helpers.gnn_model_arguments import ModelArguments
+from GNNFakeNews.utils.helpers.hyperparameter_factory import HparamFactory
+from GNNFakeNews.utils.helpers.gnn_dataset_manager import GNNDatasetManager, DATA_DIR
 import pickle
 from os import path
-
 
 # from ipywidgets import interact, interactive, fixed, interact_manual
 # import ipywidgets as widgets
 # import os
 # import json
+
+POL_ID_TWITTER_MAPPING_PKL = 'pol_id_twitter_mapping.pkl'
+GOS_ID_TWITTER_MAPPING_PKL = 'gos_id_twitter_mapping.pkl'
+
+POL_ID_TIME_MAPPING_PKL = 'pol_id_time_mapping.pkl'
+GOS_ID_TIME_MAPPING_PKL = 'gos_id_time_mapping.pkl'
 
 
 def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_manager=True, local_load=True,
@@ -61,13 +68,52 @@ def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_mana
     return model
 
 
-def load_pkl_file(file_name: str):
+def load_pkl_files(dataset_type: GNNDatasetTypeEnum):
     """
-    read and return a .pkl file
+    read and return the respective datasets pkl files.
+    Parameters
+    ----------
+    dataset_type: the dataset  type of whose pkl files will be loaded
     """
-    with open(path.join(DATA_DIR, file_name), 'rb') as f:
-        data = pickle.load(f)
-    return data
+    if dataset_type == GNNDatasetTypeEnum.POLITIFACT:
+        node_id_user_id_file_name = POL_ID_TWITTER_MAPPING_PKL
+        node_id_time_file_name = POL_ID_TIME_MAPPING_PKL
+    else:
+        node_id_user_id_file_name = GOS_ID_TWITTER_MAPPING_PKL
+        node_id_time_file_name = GOS_ID_TIME_MAPPING_PKL
+    with open(path.join(DATA_DIR, 'local', node_id_user_id_file_name), 'rb') as f:
+        node_id_user_id_dict = pickle.load(f)
+    with open(path.join(DATA_DIR, 'local', node_id_time_file_name), 'rb') as f:
+        node_id_time_dict = pickle.load(f)
+    return node_id_user_id_dict, node_id_time_dict
+
+
+def get_news_id_node_id_user_id_dict(dataset_type: GNNDatasetTypeEnum):
+    """
+    read pkl files and return the mapping for each news file.
+    Parameters
+    ----------
+    dataset_type: the dataset  type of whose pkl files will be loaded
+    """
+    node_id_user_id_dict, node_id_time_dict = load_pkl_files(dataset_type)
+    structured_dict = {}
+    index_news_id_dict = {}
+    news_id = None
+    news_index = 0
+    for node_id, user_id in node_id_user_id_dict.items():
+        try:
+            user_id_int = int(user_id)
+            structured_dict[news_id][actual_node_id] = user_id_int
+            actual_node_id += 1
+        except ValueError:
+            news_id = user_id
+            structured_dict[news_id] = {}
+            # we start with 1 since 0 is reserved for news itself.
+            actual_node_id = 1
+            index_news_id_dict[news_index] = news_id
+            news_index += 1
+
+    return structured_dict, index_news_id_dict
 
 
 '''

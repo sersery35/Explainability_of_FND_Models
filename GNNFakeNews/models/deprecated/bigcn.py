@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
 from GNNFakeNews.utils.data_loader import *
-from GNNFakeNews.utils.helpers import GNNModelHelper
+from GNNFakeNews.utils.helpers.gnn_model_helper import GNNModelHelper
 
 
 class BUrumorGCN(torch.nn.Module):

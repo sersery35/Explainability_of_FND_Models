@@ -7,7 +7,7 @@ from torch_geometric.nn import GCNConv, SAGEConv, GATConv, global_max_pool
 import torch.nn.functional as F
 
 from GNNFakeNews.utils.enums import GNNModelTypeEnum
-from GNNFakeNews.utils.helpers import GNNModelHelper
+from GNNFakeNews.utils.helpers.gnn_model_helper import GNNModelHelper
 
 
 class GNNet(GNNModelHelper):

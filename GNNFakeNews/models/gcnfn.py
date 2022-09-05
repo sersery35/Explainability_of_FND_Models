@@ -4,10 +4,10 @@ helper file to handle GCNFN model implementation in https://github.com/safe-grap
 
 import torch.nn.functional as F
 from torch.nn import Linear
-from torch_geometric.nn import global_mean_pool, GATConv
+from torch_geometric.nn import global_mean_pool, GATConv, SAGEConv
 
 from GNNFakeNews.utils.data_loader import *
-from GNNFakeNews.utils.helpers import GNNModelHelper
+from GNNFakeNews.utils.helpers.gnn_model_helper import GNNModelHelper
 
 
 class GCNFNet(GNNModelHelper):
@@ -41,6 +41,7 @@ class GCNFNet(GNNModelHelper):
 
         self.fc1 = Linear(n_hidden * 2, n_hidden)
 
+        # if concat is True then the model is UPFD, so we follow the paper of UPFD for best performance.
         if self.m_hparams.concat:
             self.fc0 = Linear(num_features, n_hidden)
             self.fc1 = Linear(n_hidden * 2, n_hidden)
