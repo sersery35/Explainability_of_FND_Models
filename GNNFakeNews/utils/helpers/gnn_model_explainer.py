@@ -31,7 +31,8 @@ class GNNModelExplainer:
 
         self.gnn_explainer = GNNExplainer(model, epochs=epochs).to(model.m_args.device)
         self.node_feat_mask, self.edge_mask = self.gnn_explainer.explain_graph(x=sample_data.x,
-                                                                               edge_index=sample_data.edge_index)
+                                                                               edge_index=sample_data.edge_index,
+                                                                               num_graphs=sample_data.num_graphs)
 
     @staticmethod
     def convert_label_to_text(label: torch.Tensor):
@@ -65,12 +66,16 @@ class GNNModelExplainer:
 
         indexes = self.edge_mask > threshold
         # print(f'Continuing with edges with following indexes: {indexes.cpu().numpy()}')
+        num_nodes = self.sample_data.num_nodes
+        # y = torch.Tensor([self.sample_data.y.cpu().numpy()[0] for _ in range(num_nodes)])
+        # print(indexes)
+        # print(y)
         print(f'Dropping {len(np.where(indexes.cpu().numpy() == False)[0])} edges out of {len(indexes)}')
         ax, self.subgraph = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
                                                                   edge_index=self.sample_data.edge_index[:, indexes]
                                                                   .cpu(),
                                                                   edge_mask=self.edge_mask[indexes].cpu(),
-                                                                  # y=sample_data.y.cpu(),
+                                                                  # y=y,
                                                                   threshold=threshold,
                                                                   node_size=1000, font_size=15)
         plt.axis('off')

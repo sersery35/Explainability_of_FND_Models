@@ -44,13 +44,14 @@ class GNNDatasetManager:
         self.test_set = None
         self.train_loader = None
         self.num_features = None
+
         if multi_gpu:
-            loader = DataListLoader
+            self.loader = DataListLoader
         else:
-            loader = DataLoader
+            self.loader = DataLoader
         # for GNNCL we use a different loader
         if hparam_manager.model_type == GNNModelTypeEnum.GNNCL:
-            loader = DenseDataLoader
+            self.loader = DenseDataLoader
 
         # we can either manually download datasets under politifact and gossipcop folders
         if local_load:
@@ -60,9 +61,9 @@ class GNNDatasetManager:
 
         self.batch_size = hparam_manager.batch_size
 
-        self.train_loader = loader(self.train_set, batch_size=self.batch_size, shuffle=True)
-        self.val_loader = loader(self.val_set, batch_size=self.batch_size, shuffle=False)
-        self.test_loader = loader(self.test_set, batch_size=self.batch_size, shuffle=False)
+        self.train_loader = self.loader(self.train_set, batch_size=self.batch_size, shuffle=True)
+        self.val_loader = self.loader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        self.test_loader = self.loader(self.test_set, batch_size=self.batch_size, shuffle=False)
 
     def local_load(self, hparam_manager, root, empty):
         """
@@ -119,14 +120,13 @@ class GNNDatasetManager:
                              split='test', transform=hparam_manager.transform,
                              pre_transform=hparam_manager.pre_transform)
 
-    @staticmethod
-    def get_random_samples(dataset: torch_geometric.data.Dataset, device: torch.device, label: Union[None, int],
+    def get_random_samples(self, loader: torch_geometric.data.DataLoader, device: torch.device, label: Union[None, int],
                            len_samples=1, return_indexes=False):
         """
         randomly select torch_geometric.data.Data instances from loader and return these instances as a list
         Parameters
         ----------
-        dataset: torch_geometric.data.Dataset,
+        loader: torch_geometric.data.DataLoader,
             the loader to be used for random sampling
         device: torch.device,
             the device to put data in
@@ -136,28 +136,29 @@ class GNNDatasetManager:
         len_samples: int,
             the length of samples to be returned
         return_indexes: bool,
-            if set to True returns indexes with the samples.
+            if set to True returns indexes (in the respective dataset) with the samples.
         """
-        assert len_samples <= len(dataset)
+        assert len_samples <= len(loader.dataset)
         samples = []
+        ds_indexes = []
         # collect the current dataset's indices in the whole dataset
-        idxs_set = dataset.indices
+        idxs_set = loader.dataset.indices
         if label is not None:
             # collect the instances from the whole dataset
-            idxs_label = np.where(dataset.dataset.data.y == label)
+            idxs_label = np.where(loader.dataset.dataset.data.y == label)
             # get the intersection of the two arrays to get the desired set
             idxs = np.intersect1d(idxs_set, idxs_label)
-            # we now need to get the location of these indexes in the given set
-            # for i in idxs:
-            #    indexes.append(np.where(idxs_set == i)[0][0])
-            # randomly select from prepared indexes
-            indexes = np.random.choice(idxs, len_samples, replace=False)
         else:
-            indexes = np.random.choice(idxs_set, len_samples, replace=False)
+            idxs = idxs_set
+        # get the location of these indexes in the given set
+        ds_indexes = [np.where(idxs_set == i)[0][0] for i in idxs]
+        # randomly select from prepared indexes
+        indexes = np.random.choice(ds_indexes, len_samples, replace=False)
         print(f'Choosing indexes: {indexes}')
-        dataset = torch.utils.data.Subset(dataset.dataset, indexes)
+        dataset = torch.utils.data.Subset(loader.dataset, indexes)
+        loader = self.loader(dataset, batch_size=self.batch_size, shuffle=True)
 
-        for data in dataset:
+        for data in loader:
             samples.append(data.to(device))
         if return_indexes:
             return samples, indexes
@@ -179,7 +180,7 @@ class GNNDatasetManager:
             if set to True returns indexes with the samples.
         """
 
-        return self.get_random_samples(self.train_set, device, label, len_samples, return_indexes)
+        return self.get_random_samples(self.train_loader, device, label, len_samples, return_indexes)
 
     def get_random_val_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False):
         """
@@ -196,7 +197,7 @@ class GNNDatasetManager:
         return_indexes: bool,
             if set to True returns indexes with the samples.
         """
-        return self.get_random_samples(self.val_set, device, label, len_samples, return_indexes)
+        return self.get_random_samples(self.val_laoder, device, label, len_samples, return_indexes)
 
     def get_test_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False):
         """
@@ -213,7 +214,7 @@ class GNNDatasetManager:
         return_indexes: bool,
             if set to True returns indexes with the samples.
         """
-        return self.get_random_samples(self.test_set, device, label, len_samples, return_indexes)
+        return self.get_random_samples(self.test_loader, device, label, len_samples, return_indexes)
 
     def fetch_all_news(self, label=None):
         """

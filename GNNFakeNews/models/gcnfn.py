@@ -48,23 +48,29 @@ class GCNFNet(GNNModelHelper):
 
         self.fc2 = Linear(n_hidden, num_classes)
 
-    def forward(self, x, edge_index, batch):
+    def forward(self, x, edge_index, batch, num_graphs):
         # x, edge_index, batch = data.x, data.edge_index, data.batch
 
         h = F.selu(self.conv1(x, edge_index))
         h = F.selu(self.conv2(h, edge_index))
+
+        # print(self.conv2.state_dict())
+        self.last_conv_layer = h
+
         h = F.selu(global_mean_pool(h, batch))
         h = F.selu(self.fc1(h))
         h = F.dropout(h, p=0.5, training=self.training)
 
         if self.m_hparams.concat:
-            root = (batch[1:] - batch[:-1]).nonzero(as_tuple=False).view(-1)
-            root = torch.cat([root.new_zeros(1), root + 1], dim=0)
-            news = x[root]
+            # root = (batch[1:] - batch[:-1]).nonzero(as_tuple=False).view(-1)
+            # root = torch.cat([root.new_zeros(1), root + 1], dim=0)
+            # news = x[root]
+            news = torch.stack([x[(batch == idx).nonzero().squeeze()[0]] for idx in range(num_graphs)])
             news = F.relu(self.fc0(news))
             h = torch.cat([h, news], dim=1)
             h = F.relu(self.fc1(h))
 
+        self.last_layer = self.fc1.weight
         h = F.log_softmax(self.fc2(h), dim=-1)
 
         return h

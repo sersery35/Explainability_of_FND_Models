@@ -73,5 +73,6 @@ class GNNet(GNNModelHelper):
             news = self.lin0(news).relu()
             h = self.lin1(torch.cat([news, h], dim=-1)).relu()
 
+        self.last_layer = h
         h = self.lin2(h)
         return h.log_softmax(dim=-1)
