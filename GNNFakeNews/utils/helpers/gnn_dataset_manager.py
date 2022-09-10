@@ -19,7 +19,7 @@ REMOTE_DATA_FOLDER = 'remote'
 
 class GNNDatasetManager:
     """
-    Manager class that handles dataset pipeline for GNN models
+    Manager class that handles dataset pipeline for GNN deprecated
     """
 
     def __init__(self, local_load=True, hparam_manager=None, multi_gpu=False, root=DATA_DIR, empty=False):

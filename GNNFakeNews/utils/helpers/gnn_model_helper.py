@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 class GNNModelHelper(torch.nn.Module):
     """
-    helper class for GNN models. reduces code repetition
+    helper class for GNN deprecated. reduces code repetition
     """
 
     def __init__(self, model_args, model_hparams, model_dataset_manager, verbose=True):

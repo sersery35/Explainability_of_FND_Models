@@ -9,7 +9,7 @@ class ExtendedEnum(Enum):
 
 class DeviceTypeEnum(ExtendedEnum):
     """
-    enum class to handle static device types for GNN models
+    enum class to handle static device types for GNN deprecated
     """
     CPU = 'cpu'
     GPU = 'cuda'
@@ -18,7 +18,7 @@ class DeviceTypeEnum(ExtendedEnum):
 
 class GNNDatasetTypeEnum(ExtendedEnum):
     """
-    enum class to handle static dataset types for GNN models
+    enum class to handle static dataset types for GNN deprecated
     """
     POLITIFACT = 'politifact'
     GOSSIPCOP = 'gossipcop'
@@ -26,7 +26,7 @@ class GNNDatasetTypeEnum(ExtendedEnum):
 
 class GNNFeatureTypeEnum(ExtendedEnum):
     """
-    enum class to handle static feature types for GNN models
+    enum class to handle static feature types for GNN deprecated
     """
     PROFILE = 'profile'
     SPACY = 'spacy'

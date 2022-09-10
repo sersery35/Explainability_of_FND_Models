@@ -7,7 +7,7 @@ from GNNFakeNews.utils.enums import GNNModelTypeEnum, GNNDatasetTypeEnum, GNNFea
 
 class HparamFactory:
     """
-    factory class that generates different hparams for different models
+    factory class that generates different hparams for different deprecated
     """
     model_type = None
     dataset = None
