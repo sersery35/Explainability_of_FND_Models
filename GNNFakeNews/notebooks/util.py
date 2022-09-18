@@ -1,22 +1,28 @@
-from GNNFakeNews.utils.enums import GNNModelTypeEnum, GNNDatasetTypeEnum
-from GNNFakeNews.models import gcnfn
-from GNNFakeNews.models.deprecated import bigcn, gnn, gnncl
+from typing import Union
+
+import networkx as nx
+import torch_geometric.data
+import matplotlib.pyplot as plt
+from torch_geometric.utils.convert import to_networkx
+
+from GNNFakeNews.utils.enums import GNNModelTypeEnum
+from GNNFakeNews.models import gcnfn, gnn
+from GNNFakeNews.models.deprecated import bigcn, gnncl
 from GNNFakeNews.utils.helpers.gnn_model_arguments import ModelArguments
 from GNNFakeNews.utils.helpers.hyperparameter_factory import HparamFactory
-from GNNFakeNews.utils.helpers.gnn_dataset_manager import GNNDatasetManager, DATA_DIR
-import pickle
-from os import path
+from GNNFakeNews.utils.helpers.gnn_dataset_manager import GNNDatasetManager
+from bert_serving.client import BertClient
+from bert_serving.server import BertServer
+from bert_serving.server.helper import get_shutdown_parser, get_args_parser
+import os
+import unicodedata
+import re
+
 
 # from ipywidgets import interact, interactive, fixed, interact_manual
 # import ipywidgets as widgets
 # import os
 # import json
-
-POL_ID_TWITTER_MAPPING_PKL = 'pol_id_twitter_mapping.pkl'
-GOS_ID_TWITTER_MAPPING_PKL = 'gos_id_twitter_mapping.pkl'
-
-POL_ID_TIME_MAPPING_PKL = 'pol_id_time_mapping.pkl'
-GOS_ID_TIME_MAPPING_PKL = 'gos_id_time_mapping.pkl'
 
 
 def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_manager=True, local_load=True,
@@ -68,52 +74,79 @@ def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_mana
     return model
 
 
-def load_pkl_files(dataset_type: GNNDatasetTypeEnum):
+def visualize_sample(sample: Union[nx.Graph, nx.DiGraph, torch_geometric.data.Data, torch_geometric.data.Batch]):
     """
-    read and return the respective datasets pkl files.
+    visualize a graph sample
     Parameters
     ----------
-    dataset_type: the dataset  type of whose pkl files will be loaded
+    sample: Union[nx.Graph, nx.DiGraph, torch_geometric.data.Data, torch_geometric.data.Batch]
+        the sample to visualize
     """
-    if dataset_type == GNNDatasetTypeEnum.POLITIFACT:
-        node_id_user_id_file_name = POL_ID_TWITTER_MAPPING_PKL
-        node_id_time_file_name = POL_ID_TIME_MAPPING_PKL
-    else:
-        node_id_user_id_file_name = GOS_ID_TWITTER_MAPPING_PKL
-        node_id_time_file_name = GOS_ID_TIME_MAPPING_PKL
-    with open(path.join(DATA_DIR, 'local', node_id_user_id_file_name), 'rb') as f:
-        node_id_user_id_dict = pickle.load(f)
-    with open(path.join(DATA_DIR, 'local', node_id_time_file_name), 'rb') as f:
-        node_id_time_dict = pickle.load(f)
-    return node_id_user_id_dict, node_id_time_dict
+    if isinstance(sample, torch_geometric.data.Data) or isinstance(sample, torch_geometric.data.Batch):
+        sample = to_networkx(sample, remove_self_loops=True, to_undirected=True)
+    plt.figure(1, figsize=(8, 8))
+    nx.draw(sample, with_labels=True)
 
 
-def get_news_id_node_id_user_id_dict(dataset_type: GNNDatasetTypeEnum):
-    """
-    read pkl files and return the mapping for each news file.
-    Parameters
-    ----------
-    dataset_type: the dataset  type of whose pkl files will be loaded
-    """
-    node_id_user_id_dict, node_id_time_dict = load_pkl_files(dataset_type)
-    structured_dict = {}
-    index_news_id_dict = {}
-    news_id = None
-    news_index = 0
-    for node_id, user_id in node_id_user_id_dict.items():
-        try:
-            user_id_int = int(user_id)
-            structured_dict[news_id][actual_node_id] = user_id_int
-            actual_node_id += 1
-        except ValueError:
-            news_id = user_id
-            structured_dict[news_id] = {}
-            # we start with 1 since 0 is reserved for news itself.
-            actual_node_id = 1
-            index_news_id_dict[news_index] = news_id
-            news_index += 1
+class BertAsAServiceManager:
+    def __init__(self, model_dir='models/cased_L-24_H-1024_A-16/', max_seq_len=768):
+        self.bert_server = None
+        self.bert_client = None
+        self._start_bert_server(model_dir, max_seq_len)
 
-    return structured_dict, index_news_id_dict
+    def _start_bert_server(self, model_dir, max_seq_len: int):
+        """
+        Start a bert server instance and client instance and return them
+        Parameters
+        ----------
+        model_dir: str,
+            the name of the model to use. must be downloaded
+            from https://github.com/llSourcell/bert-as-service#starting-bertserver-from-python
+        max_seq_len: int,
+            the maximum input sequence for the Bert Model.
+        """
+        gnnfakenews_dir = os.path.dirname(os.path.dirname(os.path.abspath(os.listdir()[0])))
+        model_dir = os.path.join(gnnfakenews_dir, model_dir)
+        args = get_args_parser().parse_args(['-model_dir', f'{model_dir}',
+                                             '-max_seq_len', f'{max_seq_len}',
+                                             '-show_tokens_to_client',
+                                             '-num_worker', '4'
+                                             ])
+
+        self.bert_server = BertServer(args)
+        self.bert_server.start()
+        self.bert_client = BertClient()
+
+    def shutdown_bert_server(self):
+        args = get_shutdown_parser().parse_args(['-timeout', '5000', '-ip', 'localhost', '-port', '5555'])
+        self.bert_server.shutdown(args)
+
+
+# here follow the paper and remove special characters like '@' and URLs
+def remove_URL(text):
+    """Remove URLs from a sample string"""
+    return re.sub(r"http\S+", "", text)
+
+
+def remove_non_ascii(words):
+    """Remove non-ASCII characters from list of tokenized words"""
+    new_words = []
+    for word in words:
+        new_word = unicodedata.normalize('NFKD', word).encode('ascii', 'ignore').decode('utf-8', 'ignore')
+        new_words.append(new_word)
+    return ' '.join(new_words)
+
+
+def remove_special_chars(text):
+    # special_chars = ['@', '#', '%', '&', '$', '"', '\'', '<', '>', '|', '-', '_', '/', '{', '}']
+    special_chars = ['@']
+    return re.sub('@', '', text)
+
+
+def normalize_text(text):
+    # text = remove_non_ascii(text)
+    text = remove_URL(text)
+    return remove_special_chars(text)
 
 
 '''

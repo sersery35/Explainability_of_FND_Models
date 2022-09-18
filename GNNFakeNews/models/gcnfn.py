@@ -55,9 +55,10 @@ class GCNFNet(GNNModelHelper):
         h = F.selu(self.conv2(h, edge_index))
 
         # print(self.conv2.state_dict())
-        self.last_conv_layer = h
 
         h = F.selu(global_mean_pool(h, batch))
+        self.last_conv_layer = h
+
         h = F.selu(self.fc1(h))
         h = F.dropout(h, p=0.5, training=self.training)
 
@@ -70,7 +71,7 @@ class GCNFNet(GNNModelHelper):
             h = torch.cat([h, news], dim=1)
             h = F.relu(self.fc1(h))
 
-        self.last_layer = self.fc1.weight
+        self.last_layer = h
         h = F.log_softmax(self.fc2(h), dim=-1)
 
         return h

@@ -6,6 +6,7 @@ import networkx as nx
 from typing import Union
 import torch_geometric.data
 
+from GNNFakeNews.utils.enums import GNNModelTypeEnum
 from GNNFakeNews.utils.helpers.gnn_model_helper import GNNModelHelper
 
 
@@ -30,9 +31,26 @@ class GNNModelExplainer:
         self.sample_data = sample_data
 
         self.gnn_explainer = GNNExplainer(model, epochs=epochs).to(model.m_args.device)
-        self.node_feat_mask, self.edge_mask = self.gnn_explainer.explain_graph(x=sample_data.x,
-                                                                               edge_index=sample_data.edge_index,
-                                                                               num_graphs=sample_data.num_graphs)
+        if model.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
+            self.node_feat_mask, self.edge_mask = self.gnn_explainer.explain_graph(x=sample_data.x,
+                                                                                   edge_index=sample_data.edge_index,
+                                                                                   adj=sample_data.adj,
+                                                                                   mask=sample_data.mask)
+        elif model.m_hparams.model_type == GNNModelTypeEnum.BIGCN:
+            self.node_feat_mask, self.edge_mask = self.gnn_explainer.explain_graph(x=sample_data.x,
+                                                                                   edge_index=sample_data.adj,
+                                                                                   # batch=sample_data.batch,
+                                                                                   bu_edge_index=sample_data.BU_edge_index,
+                                                                                   root_index=sample_data.root_index)
+        elif model.m_hparams.model_type == GNNModelTypeEnum.UPFD_GCNFN:
+            self.node_feat_mask, self.edge_mask = self.gnn_explainer.explain_graph(x=sample_data.x,
+                                                                                   edge_index=sample_data.edge_index,
+                                                                                   # batch=sample_data.batch,
+                                                                                   num_graphs=sample_data.num_graphs)
+        else:
+            self.node_feat_mask, self.edge_mask = self.gnn_explainer.explain_graph(x=sample_data.x,
+                                                                                   edge_index=sample_data.edge_index)
+            # batch=sample_data.batch)
 
     @staticmethod
     def convert_label_to_text(label: torch.Tensor):
@@ -47,37 +65,57 @@ class GNNModelExplainer:
         else:
             return 'Real'
 
-    def visualize_explaining_graph(self, threshold=None):
+    def visualize_explaining_graph(self, threshold=None, threshold_method='median'):
         """
         visualize the subgraph obtained from the GNNExplainer using the edge mask.
         Parameters
         ----------
-        threshold: float,
+        threshold: Union[None, float]
             the threshold value for which edge masks to use when visualizing. helps to visualize better. defaults to
             the median of self.edge_mask
+        threshold_method: str
+            the method to compute the threshold using self.edge_mask. defaults to 'median', possible values are 'mean',
+            'median'
         """
+        assert threshold_method in ['mean', 'median']
+
         plt.figure(figsize=(8, 8))
 
         print(f'y: {self.convert_label_to_text(self.sample_data.y.cpu())}')
-        threshold = torch.median(self.edge_mask).cpu() if threshold is None else threshold
+        if threshold is None:
+            if threshold_method == 'mean':
+                threshold = torch.mean(self.edge_mask).cpu()
+            else:
+                threshold = torch.median(self.edge_mask).cpu()
+
         print(f'Removing edges with score less than {threshold} with '
               f'min {torch.min(self.edge_mask.cpu(), axis=-1)} and '
               f'max {torch.max(self.edge_mask.cpu(), axis=-1)}')
 
         indexes = self.edge_mask > threshold
-        # print(f'Continuing with edges with following indexes: {indexes.cpu().numpy()}')
-        num_nodes = self.sample_data.num_nodes
-        # y = torch.Tensor([self.sample_data.y.cpu().numpy()[0] for _ in range(num_nodes)])
-        # print(indexes)
-        # print(y)
+
+        print(' ############ Graph before dropping edges according to the edge mask ############')
+        ax0, sg = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
+                                                        edge_index=self.sample_data.edge_index.cpu(),
+                                                        edge_mask=self.edge_mask.cpu(),
+                                                        node_size=300, font_size=8)
+        print(f'Number of nodes before dropping unimportant edges: {sg.number_of_nodes()}')
+        plt.axis('off')
+        plt.show()
+        print('#################################################################################')
+        print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        print('#################################################################################')
+        print(' ############ Graph after dropping edges according to the edge mask ############')
+        plt.figure(figsize=(8, 8))
         print(f'Dropping {len(np.where(indexes.cpu().numpy() == False)[0])} edges out of {len(indexes)}')
         ax, self.subgraph = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
                                                                   edge_index=self.sample_data.edge_index[:, indexes]
                                                                   .cpu(),
                                                                   edge_mask=self.edge_mask[indexes].cpu(),
                                                                   # y=y,
-                                                                  threshold=threshold,
-                                                                  node_size=1000, font_size=15)
+                                                                  # threshold=threshold,
+                                                                  node_size=300, font_size=8)
+        print(f'Number of nodes before dropping unimportant edges: {self.subgraph.number_of_nodes()}')
         plt.axis('off')
 
         plt.show()

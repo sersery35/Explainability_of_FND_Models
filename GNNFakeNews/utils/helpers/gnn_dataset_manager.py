@@ -121,7 +121,7 @@ class GNNDatasetManager:
                              pre_transform=hparam_manager.pre_transform)
 
     def get_random_samples(self, loader: torch_geometric.data.DataLoader, device: torch.device, label: Union[None, int],
-                           len_samples=1, return_indexes=False):
+                           len_samples=1, return_indexes=False, existing_indexes_in_dataset=None):
         """
         randomly select torch_geometric.data.Data instances from loader and return these instances as a list
         Parameters
@@ -137,12 +137,17 @@ class GNNDatasetManager:
             the length of samples to be returned
         return_indexes: bool,
             if set to True returns indexes (in the respective dataset) with the samples.
+        existing_indexes_in_dataset: list,
+            list of indexes for the whole dataset, these indexes indicate the samples that have news_content.json in
+            its respective entry in FakeNewsNet dataset. For details check fake_news_dataset_manager.py, defaults to
+            None, and when set to None, all the indexes of the whole dataset is used.
         """
         assert len_samples <= len(loader.dataset)
         samples = []
         ds_indexes = []
         # collect the current dataset's indices in the whole dataset
         idxs_set = loader.dataset.indices
+
         if label is not None:
             # collect the instances from the whole dataset
             idxs_label = np.where(loader.dataset.dataset.data.y == label)
@@ -150,12 +155,22 @@ class GNNDatasetManager:
             idxs = np.intersect1d(idxs_set, idxs_label)
         else:
             idxs = idxs_set
-        # get the location of these indexes in the given set
-        ds_indexes = [np.where(idxs_set == i)[0][0] for i in idxs]
+
+        # now we eliminate indexes that does not have news_content.json
+        if existing_indexes_in_dataset is not None:
+            idxs = np.intersect1d(idxs, existing_indexes_in_dataset)
+
+        print('available idxs: ', idxs)
         # randomly select from prepared indexes
-        indexes = np.random.choice(ds_indexes, len_samples, replace=False)
-        print(f'Choosing indexes: {indexes}')
-        dataset = torch.utils.data.Subset(loader.dataset, indexes)
+        indexes = np.random.choice(idxs, len_samples, replace=False)
+        print(f'Choosing indexes in dataset: {indexes}')
+
+        # get the location of these indexes in the given set
+        ds_indexes = [np.where(idxs_set == i)[0][0] for i in indexes]
+        print(f'Choosing indexes in train: {ds_indexes}')
+
+        # we need to do this to keep the batch value of each sample.
+        dataset = torch.utils.data.Subset(loader.dataset, ds_indexes)
         loader = self.loader(dataset, batch_size=self.batch_size, shuffle=True)
 
         for data in loader:
@@ -164,7 +179,8 @@ class GNNDatasetManager:
             return samples, indexes
         return samples
 
-    def get_random_train_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False):
+    def get_random_train_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False,
+                                 existing_indexes_in_dataset=None):
         """
         return a subset of the train_loader for model explanation
         Parameters
@@ -178,11 +194,17 @@ class GNNDatasetManager:
             the length of samples to be returned
         return_indexes: bool,
             if set to True returns indexes with the samples.
+        existing_indexes_in_dataset: list,
+            list of indexes for the whole dataset, these indexes indicate the samples that have news_content.json in
+            its respective entry in FakeNewsNet dataset. For details check fake_news_dataset_manager.py, defaults to
+            None, and when set to None, all the indexes of the whole dataset is used.
         """
 
-        return self.get_random_samples(self.train_loader, device, label, len_samples, return_indexes)
+        return self.get_random_samples(self.train_loader, device, label, len_samples, return_indexes,
+                                       existing_indexes_in_dataset)
 
-    def get_random_val_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False):
+    def get_random_val_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False,
+                               existing_indexes_in_dataset=None):
         """
         return a subset of the val_loader for model explanation
         Parameters
@@ -196,10 +218,16 @@ class GNNDatasetManager:
             the length of samples to be returned
         return_indexes: bool,
             if set to True returns indexes with the samples.
+        existing_indexes_in_dataset: list,
+            list of indexes for the whole dataset, these indexes indicate the samples that have news_content.json in
+            its respective entry in FakeNewsNet dataset. For details check fake_news_dataset_manager.py, defaults to
+            None, and when set to None, all the indexes of the whole dataset is used.
         """
-        return self.get_random_samples(self.val_laoder, device, label, len_samples, return_indexes)
+        return self.get_random_samples(self.val_laoder, device, label, len_samples, return_indexes,
+                                       existing_indexes_in_dataset)
 
-    def get_test_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False):
+    def get_test_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False,
+                         existing_indexes_in_dataset=None):
         """
         return a subset of the test_loader for model explanation
         Parameters
@@ -213,8 +241,13 @@ class GNNDatasetManager:
             the length of samples to be returned
         return_indexes: bool,
             if set to True returns indexes with the samples.
+        existing_indexes_in_dataset: list,
+            list of indexes for the whole dataset, these indexes indicate the samples that have news_content.json in
+            its respective entry in FakeNewsNet dataset. For details check fake_news_dataset_manager.py, defaults to
+            None, and when set to None, all the indexes of the whole dataset is used.
         """
-        return self.get_random_samples(self.test_loader, device, label, len_samples, return_indexes)
+        return self.get_random_samples(self.test_loader, device, label, len_samples, return_indexes,
+                                       existing_indexes_in_dataset)
 
     def fetch_all_news(self, label=None):
         """

@@ -63,6 +63,7 @@ class GNNet(GNNModelHelper):
     def forward(self, x, edge_index, batch):
         h = self.conv1(x, edge_index).relu()
         h = global_max_pool(h, batch)
+        self.last_conv_layer = h
 
         if self.m_hparams.concat:
             # Get the root node (tweet) features of each graph:
