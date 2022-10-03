@@ -1,6 +1,9 @@
+from typing import Union
+
 import torch
 import torch.nn.functional as F
 import numpy as np
+import torch_geometric.data
 
 from GNNFakeNews.utils.eval_helper import *
 from GNNFakeNews.utils.enums import GNNModelTypeEnum
@@ -274,3 +277,16 @@ class GNNModelHelper(torch.nn.Module):
         """
         self.m_visualize_tsne('FC', n_components=n_components, learning_rate=learning_rate, perplexity=perplexity,
                               init=init, n_iter=n_iter, split=split)
+
+    def m_predict(self, sample: Union[list, torch_geometric.data.Data, torch_geometric.Data.Batch]):
+        # toggle to evaluation mode
+        self.eval()
+        out, y = self.m_handle_train(sample)
+        # collect the probabilties
+        probs = F.softmax(out, dim=1).cpu().detach().numpy()[0]
+        # check if predicted and actual are the same
+        if y == sample.y:
+            print(f'Predicted the correct label. : Actual is {sample.y} and predicted {y} with probability {probs[y]}')
+        else:
+            print(f'Predicted the wrong label: Actual is {sample.y} and predicted {y} with probability {probs[y]}')
+        return y, probs

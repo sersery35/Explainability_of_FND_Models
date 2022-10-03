@@ -65,7 +65,7 @@ class GNNModelExplainer:
         else:
             return 'Real'
 
-    def visualize_explaining_graph(self, threshold=None, threshold_method='median'):
+    def visualize_explaining_graph(self, threshold=None, threshold_method='median', save_as=None):
         """
         visualize the subgraph obtained from the GNNExplainer using the edge mask.
         Parameters
@@ -76,6 +76,8 @@ class GNNModelExplainer:
         threshold_method: str
             the method to compute the threshold using self.edge_mask. defaults to 'median', possible values are 'mean',
             'median'
+        save_as: str,
+            if set, saves the resulting images as pdf files in current directory, defaults to None
         """
         assert threshold_method in ['mean', 'median']
 
@@ -101,6 +103,7 @@ class GNNModelExplainer:
                                                         node_size=300, font_size=8)
         print(f'Number of nodes before dropping unimportant edges: {sg.number_of_nodes()}')
         plt.axis('off')
+        plt.savefig(f'plot_images/{save_as}_no_threshold.pdf', bbox_inches='tight')
         plt.show()
         print('#################################################################################')
         print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
@@ -117,7 +120,7 @@ class GNNModelExplainer:
                                                                   node_size=300, font_size=8)
         print(f'Number of nodes before dropping unimportant edges: {self.subgraph.number_of_nodes()}')
         plt.axis('off')
-
+        plt.savefig(f'plot_images/{save_as}_with_threshold.pdf', bbox_inches='tight')
         plt.show()
 
     def get_node_ids_of_explaining_subgraph(self):
