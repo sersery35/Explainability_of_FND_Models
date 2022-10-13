@@ -69,7 +69,7 @@ class GNNModelHelper(torch.nn.Module):
         return out, y
 
     @torch.no_grad()
-    def compute_test(self, loader_type=None, is_last_epoch=False, verbose=False, loader=None):
+    def compute_test(self, loader_type=None, is_last_epoch=False, loader=None):
         if loader is None:
             loader_types = ['val', 'test']
             if loader_type not in loader_types:
@@ -90,7 +90,7 @@ class GNNModelHelper(torch.nn.Module):
                     self.last_layers[f'{loader_type}_last_layer_val'].append(self.last_layer)
                     self.last_conv_layers[f'{loader_type}_y'].append(y)
                     self.last_conv_layers[f'{loader_type}_last_layer_val'].append(self.last_conv_layer)
-            if verbose:
+            if self.verbose:
                 print(F.softmax(out, dim=1).cpu().numpy())
 
             out_log.append([F.softmax(out, dim=1), y])
@@ -135,12 +135,12 @@ class GNNModelHelper(torch.nn.Module):
                 out_log.append([F.softmax(out, dim=1), y])
             self.m_evaluate_train(out_log, epoch, loss_train)
 
-        self.m_evaluate_test()
+        return self.m_evaluate_test()
 
     def m_evaluate_train(self, out_log, epoch, loss_train):
         is_last_epoch = epoch == self.m_hparams.epochs - 1
-        acc_train, _, _, _, recall_train, auc_train, _ = eval_deep(out_log, self.m_dataset_manager.train_loader)
-        [acc_val, _, _, _, recall_val, auc_val, _], loss_val = self.compute_test('val', is_last_epoch)
+        acc_train, _, _, _, _, recall_train, auc_train, _ = eval_deep(out_log, self.m_dataset_manager.train_loader)
+        [acc_val, _, _, _, _, recall_val, auc_val, _], loss_val = self.compute_test('val', is_last_epoch)
 
         if self.verbose:
             print(f'\n************** epoch: {epoch} **************'
@@ -151,10 +151,12 @@ class GNNModelHelper(torch.nn.Module):
                   '\n***************************************')
 
     def m_evaluate_test(self):
-        [acc, f1_macro, f1_micro, precision, recall, auc, ap], test_loss = self.compute_test('test', is_last_epoch=True,
-                                                                                             verbose=False)
-        print(f'Test set results: acc: {acc:.4f}, f1_macro: {f1_macro:.4f}, f1_micro: {f1_micro:.4f},'
-              f'precision: {precision:.4f}, recall: {recall:.4f}, auc: {auc:.4f}, ap: {ap:.4f}')
+        [acc, f1, f1_macro, f1_micro, precision, recall, auc, ap], test_loss = self.compute_test('test',
+                                                                                                 is_last_epoch=True)
+        if self.verbose:
+            print(f'Test set results: acc: {acc:.4f}, f1: {f1}, f1_macro: {f1_macro:.4f}, f1_micro: {f1_micro:.4f},'
+                  f'precision: {precision:.4f}, recall: {recall:.4f}, auc: {auc:.4f}, ap: {ap:.4f}')
+        return acc, precision, recall, f1
 
     def _normalize_latent_space_values(self, layer: str, split: str):
         if layer == 'convolutional':
@@ -180,7 +182,7 @@ class GNNModelHelper(torch.nn.Module):
         return data, label
 
     def m_visualize_tsne(self, layer: str, n_components=2, perplexity=10, init='pca', n_iter=1000, learning_rate='auto',
-                         split='train'):
+                         split='train', save_fig=None):
         """
         this method should run after train_then_eval is called.
         Parameters
@@ -199,6 +201,9 @@ class GNNModelHelper(torch.nn.Module):
             the learning rate for TSNE, defaults to 'auto'
         split: str,
             which output to use. can be outputs from 'train', 'val' or 'test' split.
+        save_fig: str,
+            if set to None does not save the figure produced by this run, if set to any string value,
+            then the figure will be saved under notebooks/plot_images/<save_fig>.pdf.
         """
         assert init in ['random', 'pca']
 
@@ -231,10 +236,12 @@ class GNNModelHelper(torch.nn.Module):
 
         ax.set_title(f'TSNE of the last {layer} layer')
         ax.legend(title='Labels')
+        if save_fig is not None:
+            plt.savefig(f'plot_images/{save_fig}.pdf', bbox_inches='tight')
         plt.show()
 
     def m_visualize_tsne_of_last_conv_layer(self, n_components=2, perplexity=10, init='pca', n_iter=1000,
-                                            learning_rate='auto', split='train'):
+                                            learning_rate='auto', split='train', save_fig=None):
         """
         this method should run after train_then_eval is called.
         Parameters
@@ -251,13 +258,16 @@ class GNNModelHelper(torch.nn.Module):
             the learning rate for TSNE, defaults to 'auto'
         split: str,
             which output to use. can be outputs from 'train', 'val' or 'test' split.
+        save_fig: str,
+            if set to None does not save the figure produced by this run, if set to any string value,
+            then the figure will be saved under notebooks/plot_images/<save_fig>.pdf.
         """
         self.m_visualize_tsne('convolutional', n_components=n_components, learning_rate=learning_rate,
-                              perplexity=perplexity, init=init, n_iter=n_iter, split=split)
+                              perplexity=perplexity, init=init, n_iter=n_iter, split=split, save_fig=save_fig)
 
     def m_visualize_tsne_of_last_layer_before_classification(self, n_components=2, perplexity=10,
                                                              init='pca', n_iter=1000, learning_rate='auto',
-                                                             split='train'):
+                                                             split='train', save_fig=None):
         """
         this method should run after train_then_eval is called.
         Parameters
@@ -274,11 +284,14 @@ class GNNModelHelper(torch.nn.Module):
             the learning rate for TSNE, defaults to 'auto'
         split: str,
             which output to use. can be outputs from 'train', 'val' or 'test' split.
+        save_fig: str,
+            if set to None does not save the figure produced by this run, if set to any string value,
+            then the figure will be saved under notebooks/plot_images/<save_fig>.pdf.
         """
         self.m_visualize_tsne('FC', n_components=n_components, learning_rate=learning_rate, perplexity=perplexity,
-                              init=init, n_iter=n_iter, split=split)
+                              init=init, n_iter=n_iter, split=split, save_fig=save_fig)
 
-    def m_predict(self, sample: Union[list, torch_geometric.data.Data, torch_geometric.Data.Batch]):
+    def m_predict(self, sample):
         # toggle to evaluation mode
         self.eval()
         out, y = self.m_handle_train(sample)

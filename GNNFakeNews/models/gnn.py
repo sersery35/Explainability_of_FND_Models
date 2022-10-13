@@ -65,6 +65,8 @@ class GNNet(GNNModelHelper):
         h = global_max_pool(h, batch)
         self.last_conv_layer = h
 
+        print('After conv layer: ', self.last_conv_layer.data.shape)
+
         if self.m_hparams.concat:
             # Get the root node (tweet) features of each graph:
             root = (batch[1:] - batch[:-1]).nonzero(as_tuple=False).view(-1)
@@ -72,7 +74,11 @@ class GNNet(GNNModelHelper):
             news = x[root]
 
             news = self.lin0(news).relu()
-            h = self.lin1(torch.cat([news, h], dim=-1)).relu()
+            print('news: ', news.data.shape)
+            concatenated = torch.cat([news, h], dim=-1)
+            print('Concatenated: ', concatenated.data.shape)
+            h = self.lin1(concatenated).relu()
+            print('After lin1: ', h.data.shape)
 
         self.last_layer = h
         h = self.lin2(h)

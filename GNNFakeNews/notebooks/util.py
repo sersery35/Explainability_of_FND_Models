@@ -25,8 +25,8 @@ import re
 # import json
 
 
-def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_manager=True, local_load=True,
-              hparams=None, verbose=False):
+def build_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_manager=True, local_load=True,
+                hparams=None, verbose=False):
     """
     method is a convenient wrapper to initialize, train then evaluate the model
     Parameters
@@ -67,11 +67,31 @@ def run_model(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_mana
     else:
         raise ValueError(f'Options are {GNNModelTypeEnum.all_elements()}')
 
-    model.train_then_eval()
-
     if return_dataset_manager:
         return model, dataset_manager
     return model
+
+
+def make_n_runs_and_avg_stats(model_type: GNNModelTypeEnum, test_mode=False, return_dataset_manager=True,
+                              local_load=True, hparams=None, verbose=False, n=10):
+    acc, precision, recall, f1score = 0, 0, 0, 0
+    for _ in range(n):
+        if return_dataset_manager:
+            model, dataset_manager = build_model(model_type=model_type, test_mode=test_mode,
+                                                 return_dataset_manager=return_dataset_manager, local_load=local_load,
+                                                 hparams=hparams, verbose=verbose)
+        else:
+            model = build_model(model_type=model_type, test_mode=test_mode,
+                                return_dataset_manager=return_dataset_manager, local_load=local_load,
+                                hparams=hparams, verbose=verbose)
+        a, p, r, f = model.train_then_eval()
+        acc += a
+        precision += p
+        recall += r
+        f1score += f
+    if return_dataset_manager:
+        return model, dataset_manager, acc / n, precision / n, recall / n, f1score / n
+    return model, acc / n, precision / n, recall / n, f1score / n
 
 
 def visualize_sample(sample: Union[nx.Graph, nx.DiGraph, torch_geometric.data.Data, torch_geometric.data.Batch]):
@@ -147,6 +167,49 @@ def normalize_text(text):
     # text = remove_non_ascii(text)
     text = remove_URL(text)
     return remove_special_chars(text)
+
+
+def plot_label_distribution(ax, labels, fake_color, real_color, label):
+    fake_news = []
+    real_news = []
+    for l in labels:
+        if l == 'Fake':
+            fake_news.append(l)
+        else:
+            real_news.append(l)
+    print(f'len fake news {len(fake_news)}')
+    print(f'len real news {len(real_news)}')
+    height_offsets = {'fake': 0, 'real': 0}
+    for i, rect in enumerate(ax.patches):
+        if i % 2 == 0:
+            height_offsets['fake'] += rect.get_height()
+        else:
+            height_offsets['real'] += rect.get_height()
+    b = ax.bar(x=['Fake', 'Real'], height=[len(fake_news), len(real_news)],
+               bottom=[height_offsets['fake'], height_offsets['real']], color=[fake_color, real_color], label=label)
+    ax.bar_label(b, label_type='center', fontsize=20, color='black')
+
+
+def plot_dataset_label_distribution_by_split(train_ds, val_ds, test_ds, save_fig=None):
+    fig, ax = plt.subplots(figsize=(12, 8))
+    plot_label_distribution(ax, train_ds, fake_color='yellow', real_color='yellow', label='train')
+    plot_label_distribution(ax, val_ds, fake_color='lime', real_color='lime', label='validation')
+    plot_label_distribution(ax, test_ds, fake_color='orange', real_color='orange', label='test')
+
+    print(f'Total len: {len(train_ds) + len(val_ds) + len(test_ds)}')
+
+    ax.set_xlabel('News Type')
+    ax.set_ylabel('Count')
+    ax.legend()
+    plt.savefig(f'plot_images/{save_fig}.pdf', bbox_inches='tight')
+    plt.show()
+
+
+def collect_labels(dataset):
+    labels = []
+    for data in dataset:
+        labels.append('Fake' if data.y[0].cpu().detach().numpy().item() == 0 else 'Real')
+    return labels
 
 
 '''

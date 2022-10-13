@@ -154,6 +154,20 @@ class FNNDataset(InMemoryDataset):
         name (string): The `name
             <https://chrsmrrs.github.io/datasets/docs/datasets/>`_ of the
             dataset.
+        feature (string): The node feature type (:obj:`"profile"`,
+            :obj:`"spacy"`, :obj:`"bert"`, :obj:`"content"`).
+            If set to :obj:`"profile"`, the 10-dimensional node feature
+            is composed of ten Twitter user profile attributes.
+            If set to :obj:`"spacy"`, the 300-dimensional node feature is
+            composed of Twitter user historical tweets encoded by
+            the `spaCy word2vec encoder
+            <https://spacy.io/models/en#en_core_web_lg>`_.
+            If set to :obj:`"bert"`, the 768-dimensional node feature is
+            composed of Twitter user historical tweets encoded by the
+            `bert-as-service <https://github.com/hanxiao/bert-as-service>`_.
+            If set to :obj:`"content"`, the 310-dimensional node feature is
+            composed of a 300-dimensional "spacy" vector plus a
+            10-dimensional "profile" vector.
         transform (callable, optional): A function/transform that takes in an
             :obj:`torch_geometric.data.Data` object and returns a transformed
             version. The data object will be transformed before every access.

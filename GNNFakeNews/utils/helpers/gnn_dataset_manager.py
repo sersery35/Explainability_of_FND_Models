@@ -35,7 +35,7 @@ class GNNDatasetManager:
         root: str,
             the data directory, defaults to DATA_DIR which is defined in this file according to the project tree.
         empty: bool,
-            the empty parameter to be passed to FNNDataset
+            whether to return an empty dataset or not, defaults to False.
         """
         # first determine the loader
         self.num_classes = None
@@ -160,7 +160,7 @@ class GNNDatasetManager:
         if existing_indexes_in_dataset is not None:
             idxs = np.intersect1d(idxs, existing_indexes_in_dataset)
 
-        print('available idxs: ', idxs)
+        # print('available idxs: ', idxs)
         # randomly select from prepared indexes
         indexes = np.random.choice(idxs, len_samples, replace=False)
         print(f'Choosing indexes in dataset: {indexes}')

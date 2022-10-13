@@ -9,7 +9,7 @@ import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
 import shap
-from datasets import load_dataset
+from datasets import load_dataset, load_metric
 
 from Huggingface.noteboooks.deprecated.pipeline_for_hamzab_model import FakeNewsPipelineForHamzaB
 from Huggingface.noteboooks.visualization_utils import barplot_first_n_largest_shap_values
@@ -243,9 +243,10 @@ class FakeNewsExplainer:
         self.tokenizer = None
         self.model = None
         self.pipeline = None
+        self.tc_pipeline = None
         self.label_mappings = model['LABEL_MAPPINGS']
         self.dataset = load_dataset(model['DATASET'])
-        self.dataset.cache_files
+        # self.dataset.cache_files()
 
         self.load_model(model['NAME'])
         self.explainer = shap.Explainer(self.pipeline)
@@ -264,11 +265,35 @@ class FakeNewsExplainer:
         print(f'Using device: {device}')
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer, return_all_scores=True,
-                                              device=0)
-        pipeline.preprocess = types.MethodType(custom_preprocess, pipeline)
+        self.tc_pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer,
+                                                      return_all_scores=True,
+                                                      device=0)
+        self.tc_pipeline.preprocess = types.MethodType(custom_preprocess, self.tc_pipeline)
 
-        self.pipeline = shap.models.TransformersPipeline(pipeline)
+        self.pipeline = shap.models.TransformersPipeline(self.tc_pipeline)
+
+    def compute_test_metrics(self):
+        test_set = self.dataset.get('test')['text']
+        test_set_labels = np.array(self.dataset.get('test')['label'])
+        preds = self.tc_pipeline(test_set, return_all_scores=False)
+        predictions = []
+        for p in preds:
+            predictions.append(int(p['label'].replace('LABEL_', '')))
+        false_predicted_indexes = test_set_labels != np.array(predictions)
+        acc = load_metric('accuracy')
+        acc_val = acc.compute(predictions=predictions, references=test_set_labels)
+        prec = load_metric('precision')
+        prec_val = prec.compute(predictions=predictions, references=test_set_labels)
+        rec = load_metric('recall')
+        rec_val = rec.compute(predictions=predictions, references=test_set_labels)
+        f1 = load_metric('f1')
+        f1_val = f1.compute(predictions=predictions, references=test_set_labels)
+        print('Test set results:')
+        print(f'Accuracy: {acc_val}')
+        print(f'Precision: {prec_val}')
+        print(f'Recall: {rec_val}')
+        print(f'F1 score: {f1_val}')
+        return false_predicted_indexes
 
     def get_random_samples(self, n=10, split='train', label=None, should_contain_word='') -> (list, list):
         """returns the samples and their labels as builtin python lists: (list, list)
@@ -326,13 +351,11 @@ class FakeNewsExplainer:
             if bar_plot:
                 barplot_first_n_largest_shap_values(val, pred, n=n_most_important_tokens)
             if verbose:
-                print(
-                    '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
+                print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
             if text_plot:
                 shap.plots.text(val[:, pred])
             if verbose:
-                print(
-                    '###################################################################################################')
+                print('#############################################################################################')
         return shap_values
 
     def predict_sample(self, sample: str, label=None, verbose=False) -> int:
