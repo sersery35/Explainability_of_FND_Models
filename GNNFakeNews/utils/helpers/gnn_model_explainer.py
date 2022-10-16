@@ -8,11 +8,13 @@ import torch_geometric.data
 
 from GNNFakeNews.utils.enums import GNNModelTypeEnum
 from GNNFakeNews.utils.helpers.gnn_model_helper import GNNModelHelper
+from GNNFakeNews.notebooks.util import build_input_from_subgraph
 
 
 class GNNModelExplainer:
     def __init__(self, model: GNNModelHelper,
-                 sample_data: Union[torch_geometric.data.Data, torch_geometric.data.batch.Batch], epochs=200):
+                 sample_data: Union[torch_geometric.data.data.Data, torch_geometric.data.batch.Batch], epochs=200,
+                 feat_mask_type='feature'):
         """
         class is a manager for explanation pipeline. When initialized, it will explain the model with sample_data
         Parameters
@@ -23,14 +25,19 @@ class GNNModelExplainer:
             the graph data to be explained
         epochs: int,
             epochs that GNNExplainer should run.
+        feat_mask_type: str,
+            Denotes the type of feature mask that will be learned. Valid inputs are "feature" (a single feature-level
+            mask for all nodes), "individual_feature" (individual feature-level masks for each node), and "scalar"
+            (scalar mask for each each node). (default: "feature")
         """
+        self.subgraph_with_threshold = None
         self.subgraph = None
         self.adjacency_matrix = None
         # pick the root node since it is the news itself, all leaf nodes are the users who shared this news
         self.node_idx = 0
         self.sample_data = sample_data
 
-        self.gnn_explainer = GNNExplainer(model, epochs=epochs).to(model.m_args.device)
+        self.gnn_explainer = GNNExplainer(model, epochs=epochs, feat_mask_type=feat_mask_type).to(model.m_args.device)
         if model.m_hparams.model_type == GNNModelTypeEnum.GNNCL:
             self.node_feat_mask, self.edge_mask = self.gnn_explainer.explain_graph(x=sample_data.x,
                                                                                    edge_index=sample_data.edge_index,
@@ -60,7 +67,8 @@ class GNNModelExplainer:
         label: torch.Tensor,
             torch tensor with possible values 0 and 1.
         """
-        if label == 0:
+        print(label)
+        if label.all() == 0:
             return 'Fake'
         else:
             return 'Real'
@@ -89,6 +97,7 @@ class GNNModelExplainer:
                 threshold = torch.mean(self.edge_mask).cpu()
             else:
                 threshold = torch.median(self.edge_mask).cpu()
+        print(f'Using the threshold method: {threshold_method}')
 
         print(f'Removing edges with score less than {threshold} with '
               f'min {torch.min(self.edge_mask.cpu(), axis=-1)} and '
@@ -97,13 +106,20 @@ class GNNModelExplainer:
         indexes = self.edge_mask > threshold
 
         print(' ############ Graph before dropping edges according to the edge mask ############')
-        ax0, sg = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
-                                                        edge_index=self.sample_data.edge_index.cpu(),
-                                                        edge_mask=self.edge_mask.cpu(),
-                                                        node_size=300, font_size=8)
-        print(f'Number of nodes before dropping unimportant edges: {sg.number_of_nodes()}')
+
+        # y = torch.Tensor([self.sample_data.y.cpu().numpy()[0] for _ in range(self.sample_data.num_nodes)])
+        # y = torch.IntTensor([self.sample_data.y.cpu().numpy()[0]] * self.sample_data.num_nodes)
+        # print(y)
+        ax0, self.subgraph = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
+                                                                   edge_index=self.sample_data.edge_index.cpu(),
+                                                                   edge_mask=self.edge_mask.cpu(),
+                                                                   node_size=300,
+                                                                   # y=y,
+                                                                   font_size=8)
+
         plt.axis('off')
-        plt.savefig(f'plot_images/{save_as}_no_threshold.pdf', bbox_inches='tight')
+        if save_as is not None:
+            plt.savefig(f'plot_images/{save_as}_no_threshold.pdf', bbox_inches='tight')
         plt.show()
         print('#################################################################################')
         print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
@@ -111,16 +127,25 @@ class GNNModelExplainer:
         print(' ############ Graph after dropping edges according to the edge mask ############')
         plt.figure(figsize=(8, 8))
         print(f'Dropping {len(np.where(indexes.cpu().numpy() == False)[0])} edges out of {len(indexes)}')
-        ax, self.subgraph = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
-                                                                  edge_index=self.sample_data.edge_index[:, indexes]
-                                                                  .cpu(),
-                                                                  edge_mask=self.edge_mask[indexes].cpu(),
-                                                                  # y=y,
-                                                                  # threshold=threshold,
-                                                                  node_size=300, font_size=8)
+        num_nodes = self.sample_data.edge_index[:, indexes].clone()
+        num_nodes = len(np.unique(np.squeeze(num_nodes.cpu().numpy())))
+        print(num_nodes)
+        # y = torch.IntTensor([self.sample_data.y.cpu().numpy()[0]] * num_nodes)
+        ax, self.subgraph_with_threshold = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
+                                                                                 edge_index=self.sample_data.edge_index[
+                                                                                            :, indexes]
+                                                                                 .cpu(),
+                                                                                 edge_mask=self.edge_mask[
+                                                                                     indexes].cpu(),
+                                                                                 node_size=300,
+                                                                                 # y=y,
+                                                                                 font_size=8, )
+
+        # node_color=node_colors)
         print(f'Number of nodes before dropping unimportant edges: {self.subgraph.number_of_nodes()}')
         plt.axis('off')
-        plt.savefig(f'plot_images/{save_as}_with_threshold.pdf', bbox_inches='tight')
+        if save_as is not None:
+            plt.savefig(f'plot_images/{save_as}_with_threshold_{threshold_method}.pdf', bbox_inches='tight')
         plt.show()
 
     def get_node_ids_of_explaining_subgraph(self):
@@ -156,16 +181,76 @@ class GNNModelExplainer:
 
         plt.show()
 
-    def visualize_edge_mask_dist(self):
+    def visualize_edge_mask_dist(self, highlight_edges=None, save_fig=None):
         """
         scatter plot the edge mask obtained from GNNExplainer
         """
+        highlight_edges = highlight_edges or [[-1, -1]]
         edge_mask_np = self.edge_mask.cpu().numpy()
-        plt.figure(figsize=(8, 15))
+        sample_data_edge_index = self.sample_data.edge_index.clone().cpu().numpy()
+        sg_data = build_input_from_subgraph(self.subgraph, self.sample_data)
+        sg_data_edge_index = sg_data.edge_index.clone().cpu().numpy()
+        labels = []
+        colors = []
 
-        indexes = np.arange(0, len(edge_mask_np))
-        plt.scatter(x=indexes, y=edge_mask_np)
+        for col_idx in range(sample_data_edge_index.shape[1]):
+            current_edge_idx = sample_data_edge_index[:, col_idx]
+            '''print('###########################')
+            print(current_edge_idx)
+            print(sg_data_edge_index)
+            print(np.isin(sg_data_edge_index.T, current_edge_idx).all(axis=1).any())
+            print(np.isin(highlight_edges, current_edge_idx).all(axis=1).any())
+            print('###########################')'''
+
+            # collect edges that are in subgraph
+            if np.isin(sg_data_edge_index.T, current_edge_idx).all(axis=1).any() and np.isin(highlight_edges,
+                                                                                             current_edge_idx).all(
+                axis=1).any():
+                colors.append('green')
+            elif np.isin(sg_data_edge_index.T, current_edge_idx).all(axis=1).any():
+                colors.append('orange')
+            else:
+                colors.append('blue')
+            labels.append(f'v_{current_edge_idx[0]},{current_edge_idx[1]}')
+
+        plt.figure(figsize=(20, 50))
+        # plt.bar(labels, height=heights, color=colors)
+        plt.barh(labels, width=edge_mask_np, color=colors)
         plt.title('Edge mask distribution')
+        # plt.xticks(rotation=90)
+        if save_fig is not None:
+            plt.savefig(f'plot_images/{save_fig}.pdf', bbox_inches='tight')
+        plt.show()
+        return colors
+
+    def visualize_edge_mask_for_subgraph(self, highlight_edges=None, save_fig=None):
+        highlight_edges = highlight_edges or [[-1, -1]]
+        edge_mask_np = self.edge_mask.cpu().numpy()
+        sample_data_edge_index = self.sample_data.edge_index.clone().cpu().numpy()
+        sg_data = build_input_from_subgraph(self.subgraph, self.sample_data)
+        sg_data_edge_index = sg_data.edge_index.clone().cpu().numpy()
+        labels = []
+        heights = []
+        colors = []
+
+        for col_index in range(sg_data_edge_index.shape[1]):
+            current_edge_index = sg_data_edge_index[:, col_index]
+            if np.isin(highlight_edges, current_edge_index).all(axis=1).any():
+                colors.append('green')
+            else:
+                colors.append('blue')
+            # look for the position of the same edge index
+            position = (sample_data_edge_index.T == current_edge_index).all(axis=1)
+            edge_mask_value = edge_mask_np[position]
+            labels.append(f'v_{current_edge_index[0]},{current_edge_index[1]}')
+            heights.append(edge_mask_value[0])
+        plt.figure(figsize=(20, 8))
+        plt.bar(labels, height=heights, color=colors)
+
+        plt.title('Edge mask distribution')
+        plt.xticks(rotation=90)
+        if save_fig is not None:
+            plt.savefig(f'plot_images/{save_fig}.pdf', bbox_inches='tight')
         plt.show()
 
     def visualize_adjacency_matrix(self):

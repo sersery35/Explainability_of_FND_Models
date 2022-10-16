@@ -223,7 +223,7 @@ class GNNDatasetManager:
             its respective entry in FakeNewsNet dataset. For details check fake_news_dataset_manager.py, defaults to
             None, and when set to None, all the indexes of the whole dataset is used.
         """
-        return self.get_random_samples(self.val_laoder, device, label, len_samples, return_indexes,
+        return self.get_random_samples(self.val_loader, device, label, len_samples, return_indexes,
                                        existing_indexes_in_dataset)
 
     def get_test_samples(self, device: torch.device, label=None, len_samples=1, return_indexes=False,

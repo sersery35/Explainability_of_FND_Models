@@ -158,7 +158,7 @@ class GNNModelHelper(torch.nn.Module):
                   f'precision: {precision:.4f}, recall: {recall:.4f}, auc: {auc:.4f}, ap: {ap:.4f}')
         return acc, precision, recall, f1
 
-    def _normalize_latent_space_values(self, layer: str, split: str):
+    def _m_build_latent_space_values(self, layer: str, split: str):
         if layer == 'convolutional':
             layers = self.last_conv_layers
         else:
@@ -208,12 +208,12 @@ class GNNModelHelper(torch.nn.Module):
         assert init in ['random', 'pca']
 
         if split != 'all':
-            data, label = self._normalize_latent_space_values(layer, split=split)
+            data, label = self._m_build_latent_space_values(layer, split=split)
         else:
             data = None
             label = None
             for s in ['train', 'val', 'test']:
-                _d, _l = self._normalize_latent_space_values(layer, split=s)
+                _d, _l = self._m_build_latent_space_values(layer, split=s)
                 if data is None:
                     data = _d
                     label = _l
@@ -297,9 +297,12 @@ class GNNModelHelper(torch.nn.Module):
         out, y = self.m_handle_train(sample)
         # collect the probabilties
         probs = F.softmax(out, dim=1).cpu().detach().numpy()[0]
+
         # check if predicted and actual are the same
-        if y == sample.y:
-            print(f'Predicted the correct label. : Actual is {sample.y} and predicted {y} with probability {probs[y]}')
+        if y.cpu().numpy()[0] == np.argmax(probs):
+            print(
+                f'Predicted the correct label. : Actual is {y.cpu().numpy()[0]} and predicted {np.argmax(probs)} with probability {probs[y]}')
         else:
-            print(f'Predicted the wrong label: Actual is {sample.y} and predicted {y} with probability {probs[y]}')
+            print(
+                f'Predicted the wrong label: Actual is {y.cpu().numpy()[0]} and predicted {np.argmax(probs)} with probability {probs[y]}')
         return y, probs

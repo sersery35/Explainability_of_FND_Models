@@ -3,7 +3,8 @@ from typing import Union
 import networkx as nx
 import torch_geometric.data
 import matplotlib.pyplot as plt
-from torch_geometric.utils.convert import to_networkx
+from torch_geometric.utils.convert import to_networkx, from_networkx
+from torch_geometric.data import Data
 
 from GNNFakeNews.utils.enums import GNNModelTypeEnum
 from GNNFakeNews.models import gcnfn, gnn
@@ -94,18 +95,43 @@ def make_n_runs_and_avg_stats(model_type: GNNModelTypeEnum, test_mode=False, ret
     return model, acc / n, precision / n, recall / n, f1score / n
 
 
-def visualize_sample(sample: Union[nx.Graph, nx.DiGraph, torch_geometric.data.Data, torch_geometric.data.Batch]):
+import torch
+
+
+def visualize_sample(sample: Union[nx.Graph, nx.DiGraph, torch_geometric.data.Data, torch_geometric.data.Batch],
+                     save_fig=None):
     """
     visualize a graph sample
     Parameters
     ----------
     sample: Union[nx.Graph, nx.DiGraph, torch_geometric.data.Data, torch_geometric.data.Batch]
         the sample to visualize
+    save_fig: Union[None, str],
+        if passed a str value, saves the image under that name
     """
+    plt.figure(1, (12, 12))
     if isinstance(sample, torch_geometric.data.Data) or isinstance(sample, torch_geometric.data.Batch):
-        sample = to_networkx(sample, remove_self_loops=True, to_undirected=True)
-    plt.figure(1, figsize=(8, 8))
-    nx.draw(sample, with_labels=True)
+        G = to_networkx(sample, remove_self_loops=True, to_undirected=True)
+    else:
+        G = sample = remove_self_loops_and_directions(sample)
+        sample = from_networkx(sample)
+    default_edge_color = ['black'] * sample.edge_index.size(1)
+    pos = nx.spring_layout(G, seed=10)
+    nx.draw_networkx_nodes(G, pos, node_size=300, cmap='cool')
+
+    nx.draw_networkx_edges(G, pos, edge_color=default_edge_color)
+
+    nx.draw_networkx_labels(G, pos, font_size=8)
+    if save_fig is not None:
+        plt.savefig(f'plot_images/{save_fig}.pdf', bbox_inches='tight')
+    plt.show()
+
+
+def remove_self_loops_and_directions(G):
+    for node in G:
+        if G.has_edge(node, node):
+            G.remove_edge(node, node)
+    return G.to_undirected()
 
 
 class BertAsAServiceManager:
@@ -285,3 +311,40 @@ def plot_interactive(m, thresh=0.5):
 
     print("Removed {} edges -- K = {} remain.".format(G_.number_of_edges() - G.number_of_edges(), G.number_of_edges()))
     print("Removed {} nodes -- K = {} remain.".format(G_.number_of_nodes() - G.number_of_nodes(), G.number_of_nodes()))'''
+
+
+def build_input_from_subgraph(subgraph, sample):
+    sg_tensor = from_networkx(subgraph.to_undirected())
+    nodes_outgoing = sg_tensor.node_stores[0]['edge_index'][0]
+    nodes_incoming = sg_tensor.node_stores[0]['edge_index'][1]
+    nodes_in_subgraph = []
+    for n_o, n_i in zip(nodes_outgoing, nodes_incoming):
+        if n_o.cpu().numpy().sum() not in nodes_in_subgraph:
+            nodes_in_subgraph.append(n_o.cpu().numpy().sum())
+        elif n_i.cpu().numpy().sum() not in nodes_in_subgraph:
+            nodes_in_subgraph.append(n_i.cpu().numpy().sum())
+    nodes_in_subgraph.sort()
+    node_features = sample.x[nodes_in_subgraph]
+    sample = Data(x=node_features, edge_index=sg_tensor.edge_index, y=sample.y,
+                  batch=torch.zeros(node_features.size(0), dtype=torch.long))
+    return sample
+
+
+def remove_news_content_from_sample(sample):
+    node_features = sample.x.clone()
+    batch = sample.batch.clone()
+    y = sample.y.clone()
+    edge_index = sample.edge_index.clone()
+    node_features[0] = torch.zeros_like(node_features[0])
+    sample_copy = Data(x=node_features, y=y, batch=batch, edge_index=edge_index)
+    return sample_copy
+
+
+def remove_historical_information(sample):
+    node_features = sample.x.clone()
+    batch = sample.batch.clone()
+    y = sample.y.clone()
+    edge_index = sample.edge_index.clone()
+    node_features[1:] = torch.zeros_like(node_features[1:])
+    sample_copy = Data(x=node_features, y=y, batch=batch, edge_index=edge_index)
+    return sample_copy
