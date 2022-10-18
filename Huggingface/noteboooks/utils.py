@@ -7,12 +7,14 @@ from enum import Enum
 import pandas as pd
 import torch
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline, \
+    AutoModelForMaskedLM, TrainingArguments, Trainer, pipeline, DataCollatorWithPadding
 import shap
 from datasets import load_dataset, load_metric
-
 from Huggingface.noteboooks.deprecated.pipeline_for_hamzab_model import FakeNewsPipelineForHamzaB
 from Huggingface.noteboooks.visualization_utils import barplot_first_n_largest_shap_values
+import re
+from IPython.core.display import HTML, display as ipython_display
 
 print(f'This project is written and tested in Python {python_version()}')
 PROJECT_DIR = path.abspath(path.dirname(__file__))
@@ -77,142 +79,126 @@ class TransformersModelTypeEnum(Enum):
         'TRAIN_DATASET': DatasetTypeEnum.UNKNOWN,
         'EXTERNAL_LINKS': [],
     }
-
-
-class HuggingfaceDatasetManager:
-    """
-    handles loading, sampling, preparing of the data for model explanation
-    evaluate real as True and troll as fake when working with DatasetTypeEnum.CHINHON_FAKE_TWEET_DETECT
-    """
-
-    def __init__(self, dataset_type: DatasetTypeEnum):
-
-        self.shuffled_df = None
-        true_news_file_dir = path.join(DATA_DIR, dataset_type.value['TRUE_NEWS_DIR'])
-        self.true_news_df = self._load_dataframe(true_news_file_dir)
-
-        fake_news_file_dir = path.join(DATA_DIR, dataset_type.value['FAKE_NEWS_DIR'])
-        self.fake_news_df = self._load_dataframe(fake_news_file_dir)
-
-        self.text_colname = dataset_type.value['TEXT_COLNAME']
-        self.text_col_idx = np.where(self.true_news_df.columns.values == self.text_colname)[0][0]
-        if dataset_type == DatasetTypeEnum.KAGGLE_FAKE_NEWS:
-            self.title_colname = dataset_type.value['TITLE_COLNAME']
-            self.title_col_idx = np.where(self.true_news_df.columns.values == self.title_colname)[0][0]
-
-    @staticmethod
-    def _load_dataframe(dir: str):
-        print(f"Loading instances from dir: {dir}")
-        df = pd.read_csv(dir)
-        print(f"Loaded {len(df)} instances from {dir}")
-        return df
-
-    def _fetch_rows_with_text(self, text: str, from_true_news: bool):
-        """
-        method filters the dataset according to the existence of the value of text parameter in the "text" column of the
-        dataframe
-        """
-        df = self.true_news_df if from_true_news else self.fake_news_df
-        idxs = df[self.text_colname].map(lambda x: text in x)
-        return df[idxs]
-
-    def _fetch_samples(self, dataframe: pd.DataFrame, sample_count: int, sample_random: bool,
-                       model_type: TransformersModelTypeEnum):
-        # if the indexes are not randomized the first "sample_count" rows will be selected.
-        self.idxs = np.random.randint(low=0, high=len(dataframe) - 1,
-                                      size=sample_count).tolist() if sample_random else list(range(0, sample_count))
-        # print(f"Getting the following indexes: {idxs}")
-        return self.fetch_latest_samples(model_type)
-        # if model_type == TransformersModelTypeEnum.HB_ROBERTA_FAKE_NEWS:
-        #    return dataframe.iloc[self.idxs].apply(self._transform, axis=1)[self.text_colname].values.tolist()
-        # return dataframe[self.text_colname].iloc[self.idxs].values.tolist()
-
-    def _transform(self, row):
-        title_token = '<title> '
-        content_token = ' <content> '
-        end_token = ' <end>'
-        text_title_part = title_token + row[self.title_col_idx]
-        text_content_part = content_token + row[self.text_col_idx]
-        row[self.text_col_idx] = text_title_part + text_content_part + end_token
-        return row
-
-    def _fetch_samples_with_text(self, from_true_news: bool, text: str, sample_count: int, sample_random: bool):
-        df = self._fetch_rows_with_text(text, from_true_news=from_true_news)
-        return self._fetch_samples(df, sample_count, sample_random)
-
-    def fetch_true_samples_with_text(self, text: str, sample_count=3, sample_random=True):
-        return self._fetch_samples_with_text(True, text, sample_count, sample_random)
-
-    def fetch_fake_samples_with_text(self, text: str, sample_count=3, sample_random=True):
-        return self._fetch_samples_with_text(False, text, sample_count, sample_random)
-
-    def fetch_true_samples(self, sample_count=3, sample_random=True):
-        return self._fetch_samples(self.true_news_df, sample_count, sample_random)
-
-    def fetch_fake_samples(self, sample_count=3, sample_random=True):
-        return self._fetch_samples(self.fake_news_df, sample_count, sample_random)
-
-    def fetch_random_samples(self, model_type: TransformersModelTypeEnum, sample_count=200):
-        # add labels for explanation
-        true_samples_with_labels = self.true_news_df.copy().sample(int(sample_count / 2))
-        true_samples_with_labels['label'] = 1
-        fake_samples_with_labels = self.fake_news_df.copy().sample(int(sample_count / 2))
-        fake_samples_with_labels['label'] = 0
-
-        # concatenate dataframes then shuffle
-        self.shuffled_df = pd.concat([true_samples_with_labels, fake_samples_with_labels]).sample(frac=1)
-
-        return self.shuffled_df['label'], self._fetch_samples(self.shuffled_df, sample_count, False, model_type)
-
-    def fetch_latest_samples(self, model_type: TransformersModelTypeEnum):
-        """
-        fetch_random_samples should run before this method so that this method can recognize the last sampled indexes.
-        """
-        assert self.idxs is not None, 'self.idxs is None, you probably did not run fetch_random_samples.'
-        assert self.shuffled_df is not None, 'self.shuffled_df is None, you probably did not run fetch_random_samples.'
-
-        if model_type == TransformersModelTypeEnum.HB_ROBERTA_FAKE_NEWS:
-            return self.shuffled_df.iloc[self.idxs].apply(self._transform, axis=1)[self.text_colname].values.tolist()
-        return self.shuffled_df['label'], self.shuffled_df[self.text_colname].iloc[self.idxs].values.tolist()
+    DISTILBERT_VANILLA = {
+        'NAME': 'distilroberta-base',
+        'TRAIN_DATASET': 'GonzaloA/fake_news',
+        'LABEL_MAPPINGS': {'LABEL_0': 'Fake', 'LABEL_1': 'True'},
+    }
 
 
 class ModelManager:
     """
-    class that loads all deprecated from Huggingface and manages various tasks
+    class that loads all models from Huggingface and manages various tasks
     """
 
     def __init__(self, model_type: TransformersModelTypeEnum):
-        self.model_type = model_type
         model_name = model_type.value['NAME']
         if torch.cuda.is_available():
             device = torch.device('cuda')
         else:
             device = torch.device('cpu')
         print(f'Using device: {device}')
-        model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         if model_type == TransformersModelTypeEnum.HB_ROBERTA_FAKE_NEWS:
-            self.pipeline = FakeNewsPipelineForHamzaB(model=model, tokenizer=tokenizer, return_all_scores=True,
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
+            self.pipeline = FakeNewsPipelineForHamzaB(model=self.model, tokenizer=self.tokenizer,
+                                                      return_all_scores=True,
                                                       device=0)
+        elif model_type == TransformersModelTypeEnum.DISTILBERT_VANILLA:
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
+            self.pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer,
+                                                       return_all_scores=True,
+                                                       device=0)
         else:
-            self.pipeline = TextClassificationPipeline(model=model, tokenizer=tokenizer, return_all_scores=True,
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
+            self.pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer,
+                                                       return_all_scores=True,
                                                        device=0)
         # force the pipeline preprocess to truncate the outputs for convenience
         self.pipeline.preprocess = types.MethodType(custom_preprocess, self.pipeline)
+        self.metric = load_metric('accuracy')
+        self.trainer = None
 
-    def explain_texts(self, texts: list, algorithm="auto", output_names=None, visualize=True, verbose=False):
-        """
-        method plots the text_plot for the given texts based on their SHAP values.
-        only works with transformers pipeline for now. not tested in other deprecated.
-        """
-        output_names = output_names if output_names is not None else list(
-            self.model_type.value['LABEL_MAPPINGS'].values())
-        predict_multiple_with_correct_labels(self, texts, verbose)
-        explainer = shap.Explainer(model=self.pipeline, output_names=output_names, algorithm=algorithm)
-        shap_values = explainer(texts)
-        if visualize:
-            shap.text_plot(shap_values)
-        return shap_values, explainer
+    @staticmethod
+    def get_training_arguments(logging_steps: int):
+        return TrainingArguments(
+            output_dir='results',
+            num_train_epochs=3,
+            learning_rate=2e-5,
+            per_device_train_batch_size=16,
+            per_device_eval_batch_size=16,
+            metric_for_best_model='accuracy',
+            load_best_model_at_end=False,
+            weight_decay=0.01,
+            evaluation_strategy='epoch',
+            save_strategy='epoch',
+            logging_steps=logging_steps,
+            push_to_hub=False,
+        )
+
+    def train_model(self, train_dataset, val_dataset):
+        logging_steps = len(train_dataset) // (2 * 16 * 3)
+        self.trainer = Trainer(
+            model=self.model,
+            args=self.get_training_arguments(logging_steps),
+            train_dataset=train_dataset,
+            eval_dataset=val_dataset,
+            data_collator=DataCollatorWithPadding(self.tokenizer),
+            tokenizer=self.tokenizer,
+            compute_metrics=self.compute_metrics
+        )
+
+    def compute_metrics(self, eval_preds):
+        logits, labels = eval_preds
+        predictions = np.argmax(logits, axis=-1)
+        return self.metric.compute(predictions=predictions, references=labels)
+
+    def compute_test(self, test_dataset):
+        predictions = np.argmax(self.trainer.predict(test_dataset).predictions, axis=1)
+        self.metric.compute(predictions=predictions, references=test_dataset.label_ids)
+
+
+class DatasetManager:
+    """
+    class that handles operations with the dataset GonzaloA/fake_news
+    """
+
+    def __init__(self, tokenizer):
+        dataset = load_dataset('GonzaloA/fake_news')
+        self.tokenizer = tokenizer
+        self.train_set = dataset.get('train')
+        self.val_set = dataset.get('validation')
+        self.test_set = dataset.get('test')
+
+    def _remove_source_from_row_then_tokenize(self, dataset):
+        regex_pattern = r'.+(((\(Reuters\))|(\(REUTERS\))) - )'
+        texts = dataset['text']
+        texts = [re.sub(regex_pattern, '', text) for text in texts]
+        dataset['text'] = texts
+        return self.tokenizer(dataset['text'], truncation=True)
+
+    def prepare_dataset(self):
+        col_names_to_remove = self.train_set.column_names
+        # remove all columns except label
+        col_names_to_remove.remove('label')
+        self.train_set = self.train_set.map(self._remove_source_from_row_then_tokenize, batched=True,
+                                            remove_columns=col_names_to_remove)
+        # self.train_set = self.train_set.map(self.tokenize, batched=True)
+        self.val_set = self.val_set.map(self._remove_source_from_row_then_tokenize, batched=True,
+                                        remove_columns=col_names_to_remove)
+        # self.val_set = self.val_set.map(self.tokenize, batched=True)
+        self.test_set = self.test_set.map(self._remove_source_from_row_then_tokenize, batched=True,
+                                          remove_columns=col_names_to_remove)
+        # self.test_set = self.test_set.map(self.tokenize, batched=True)
+
+    def remove_unused_columns(self):
+        self.train_set = self.train_set.map()
+
+    def save_dataset(self):
+        self.train_set.save_to_disk('dataset_edited/train.hf')
+        self.val_set.save_to_disk('dataset_edited/val.hf')
+        self.test_set.save_to_disk('dataset_edited/test.hf')
 
 
 def custom_preprocess(self, inputs, **tokenizer_kwargs):
@@ -233,12 +219,15 @@ def predict_multiple_with_correct_labels(model_manager: ModelManager, texts: lis
 
 
 class FakeNewsExplainer:
-    def __init__(self, model: dict):
+    def __init__(self, model: dict, explainer='deep'):
         """Class handles all code heavy tasks and returns meaningful data and visualizations for convenience.
         Parameters
         ----------
         model: dict
             a dict with following keys: 'NAME', 'LABEL_MAPPINGS', 'DATASET'
+        explainer: str,
+            the algorithm for the explainer, defaults to 'deep' which calls a DeepExplainer for the model.
+            if set to any other value, it will call the vanilla explainer of SHAP: shap.Explainer
         """
         self.tokenizer = None
         self.model = None
@@ -249,7 +238,16 @@ class FakeNewsExplainer:
         # self.dataset.cache_files()
 
         self.load_model(model['NAME'])
-        self.explainer = shap.Explainer(self.pipeline)
+        if explainer == 'deep':
+            samples = self.get_random_samples(n=200)
+            print('Is model supported: ', shap.DeepExplainer.supports_model_with_masker(self.model, self.tokenizer))
+            if shap.DeepExplainer.supports_model_with_masker(self.model, self.tokenizer):
+                self.explainer = shap.DeepExplainer(self.pipeline, samples)
+            else:
+                self.explainer = shap.Explainer(self.pipeline)
+
+        else:
+            self.explainer = shap.Explainer(self.pipeline)
 
     def load_model(self, model_name: str):
         """load model to the device and create the pipeline that will be used in the explanation
@@ -265,17 +263,19 @@ class FakeNewsExplainer:
         print(f'Using device: {device}')
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.tc_pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer,
-                                                      return_all_scores=True,
-                                                      device=0)
-        self.tc_pipeline.preprocess = types.MethodType(custom_preprocess, self.tc_pipeline)
+        pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer,
+                                              return_all_scores=True,
+                                              device=0)
+        pipeline.preprocess = types.MethodType(custom_preprocess, pipeline)
 
-        self.pipeline = shap.models.TransformersPipeline(self.tc_pipeline)
+        self.pipeline = pipeline
+
+        # self.pipeline = shap.models.TransformersPipeline(self.tc_pipeline)
 
     def compute_test_metrics(self):
         test_set = self.dataset.get('test')['text']
         test_set_labels = np.array(self.dataset.get('test')['label'])
-        preds = self.tc_pipeline(test_set, return_all_scores=False)
+        preds = self.pipeline(test_set, return_all_scores=False)
         predictions = []
         for p in preds:
             predictions.append(int(p['label'].replace('LABEL_', '')))
@@ -328,7 +328,7 @@ class FakeNewsExplainer:
         return random_samples_pd['text'].values.tolist(), random_samples_pd['label'].values.tolist()
 
     def explain_samples(self, samples: list, labels: list, text_plot=True, bar_plot=True, n_most_important_tokens=10,
-                        verbose=False):
+                        verbose=False, save_as=None):
         """returns the shap values of random samples
         Parameters
         ----------
@@ -342,18 +342,30 @@ class FakeNewsExplainer:
             whether to show the most important n_most_important_tokens tokens. The default is True
         n_most_important_tokens: int
             number of tokens to display in the bar plot. The default is 10
-        verbose: whether to output predictions
+        verbose: bool,
+            whether to output predictions
+        save_as: str,
+            if set to none does not save, if set to any str value, saves barplot and forceplot under
+            plot_images/<save_as>.pdf
         """
         shap_values = self.explainer(samples)
         print(f'labels: {labels}')
         for i, val in enumerate(shap_values):
             pred = self.predict_sample(samples[i], labels[i], verbose=verbose)
             if bar_plot:
-                barplot_first_n_largest_shap_values(val, pred, n=n_most_important_tokens)
+                barplot_first_n_largest_shap_values(val, pred, n=n_most_important_tokens, save_as=save_as)
             if verbose:
                 print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
             if text_plot:
-                shap.plots.text(val[:, pred])
+                if save_as is not None:
+                    image_html = shap.plots.text(val[:, pred], display=False)
+                    with open(f'plot_images/{save_as}_forceplot.html', 'w') as file:
+                        file.write(image_html)
+                    img_html = HTML(image_html)
+                    ipython_display(img_html)
+                else:
+                    shap.plots.text(val[:, pred])
+
             if verbose:
                 print('#############################################################################################')
         return shap_values
@@ -369,9 +381,10 @@ class FakeNewsExplainer:
         verbose: bool,
             whether to print out the prediction vs actual information, the default is True
         """
-        pred = self.pipeline([sample])
-        fake_prob = pred[:, 0]
-        real_prob = pred[:, 1]
+        pred = self.pipeline([sample])[0]
+        print(pred)
+        fake_prob = pred[0]['score']
+        real_prob = pred[1]['score']
         if verbose:
             print('###################################################################################################')
             print(f'Predicted fake with {fake_prob}')

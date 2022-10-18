@@ -11,7 +11,7 @@ import re
 shap.initjs()
 
 
-def barplot_token_shap_values(tokens: list, shap_values: list, label: int):
+def barplot_token_shap_values(tokens: list, shap_values: list, label: int, save_as=None):
     """plot the tokens against their shap values as a horizontal barplot
     Parameters
     ----------
@@ -21,17 +21,26 @@ def barplot_token_shap_values(tokens: list, shap_values: list, label: int):
         list of shap values of the tokens
     label: int,
         label of the current sample whose tokens and shap values will be visualized.
+    save_as: str,
+        if set to none does not save, if set to any str value, saves barplot and forceplot under
+        plot_images/<save_as>.pdf
     """
-    plt.figure(figsize=(8, 8))
+    plt.figure(figsize=(16, 6))
     if label == 0:
         label_color = 'red'
     else:
         label_color = 'green'
-    plt.barh(tokens, shap_values, color=label_color)
-
+    # put each token in quotation marks to spot the space character
+    tokens_visible = []
+    for token in tokens:
+        tokens_visible.append(f'\"{token}\"')
+    # plt.barh(tokens_visible, shap_values, color=label_color)
+    plt.bar(tokens_visible, shap_values, color=label_color)
     # Add Plot Title
     plt.title(f'First {len(tokens)} important tokens', loc='left', )
 
+    if save_as is not None:
+        plt.savefig(f'plot_images/{save_as}_barplot.pdf', bbox_inches='tight')
     # Show Plot
     plt.show()
 
@@ -78,7 +87,7 @@ def get_most_important_n_tokens(shap_values_dict, label, n=10, verbose=False):
     return tokenized_input[first_n_important_indexes], first_n_important_shap_values
 
 
-def barplot_first_n_largest_shap_values(shap_values, label, n=10):
+def barplot_first_n_largest_shap_values(shap_values, label, n=10, save_as=None):
     """wrapper method for plotting the most important n tokens
     Parameters
     ----------
@@ -88,6 +97,9 @@ def barplot_first_n_largest_shap_values(shap_values, label, n=10):
         the actual label of the sample
     n: int
         how many tokens to barplot. The default is 10
+    save_as: str,
+        if set to none does not save, if set to any str value, saves barplot and forceplot under
+        plot_images/<save_as>.pdf
     """
     tokens, s_values = get_most_important_n_tokens(shap_values, label=label, n=n)
-    barplot_token_shap_values(tokens, s_values, label)
+    barplot_token_shap_values(tokens, s_values, label, save_as=save_as)
