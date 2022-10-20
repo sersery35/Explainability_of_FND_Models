@@ -10,7 +10,7 @@ import numpy as np
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline, \
     AutoModelForMaskedLM, TrainingArguments, Trainer, pipeline, DataCollatorWithPadding
 import shap
-from datasets import load_dataset, load_metric
+from datasets import load_dataset, load_metric, load_from_disk
 from Huggingface.noteboooks.deprecated.pipeline_for_hamzab_model import FakeNewsPipelineForHamzaB
 from Huggingface.noteboooks.visualization_utils import barplot_first_n_largest_shap_values
 import re
@@ -148,6 +148,7 @@ class ModelManager:
             tokenizer=self.tokenizer,
             compute_metrics=self.compute_metrics
         )
+        self.trainer.train()
 
     def compute_metrics(self, eval_preds):
         logits, labels = eval_preds
@@ -164,41 +165,56 @@ class DatasetManager:
     class that handles operations with the dataset GonzaloA/fake_news
     """
 
-    def __init__(self, tokenizer):
-        dataset = load_dataset('GonzaloA/fake_news')
+    def __init__(self, tokenizer, local_load=True):
         self.tokenizer = tokenizer
-        self.train_set = dataset.get('train')
-        self.val_set = dataset.get('validation')
-        self.test_set = dataset.get('test')
+        if local_load:
+            self.load_local_dataset()
+        else:
+            dataset = load_dataset('GonzaloA/fake_news')
+            self.train_set = dataset.get('train')
+            self.val_set = dataset.get('validation')
+            self.test_set = dataset.get('test')
+            self.train_set_tok = None
+            self.val_set_tok = None
+            self.test_set_tok = None
 
-    def _remove_source_from_row_then_tokenize(self, dataset):
-        regex_pattern = r'.+(((\(Reuters\))|(\(REUTERS\))) - )'
-        texts = dataset['text']
-        texts = [re.sub(regex_pattern, '', text) for text in texts]
-        dataset['text'] = texts
+    def load_local_dataset(self):
+        self.train_set = load_from_disk('dataset_edited/train.hf')
+        self.train_set_tok = load_from_disk('dataset_edited/train_tok.hf')  # .shuffle(seed=42)
+        self.val_set = load_from_disk('dataset_edited/val.hf')
+        self.val_set_tok = load_from_disk('dataset_edited/val_tok.hf')  # .shuffle(seed=42)
+        self.test_set = load_from_disk('dataset_edited/test.hf')
+        self.test_set_tok = load_from_disk('dataset_edited/test_tok.hf')  # .shuffle(seed=42)
+
+    def tokenize(self, dataset):
         return self.tokenizer(dataset['text'], truncation=True)
 
     def prepare_dataset(self):
         col_names_to_remove = self.train_set.column_names
         # remove all columns except label
         col_names_to_remove.remove('label')
-        self.train_set = self.train_set.map(self._remove_source_from_row_then_tokenize, batched=True,
-                                            remove_columns=col_names_to_remove)
-        # self.train_set = self.train_set.map(self.tokenize, batched=True)
-        self.val_set = self.val_set.map(self._remove_source_from_row_then_tokenize, batched=True,
-                                        remove_columns=col_names_to_remove)
-        # self.val_set = self.val_set.map(self.tokenize, batched=True)
-        self.test_set = self.test_set.map(self._remove_source_from_row_then_tokenize, batched=True,
-                                          remove_columns=col_names_to_remove)
-        # self.test_set = self.test_set.map(self.tokenize, batched=True)
-
-    def remove_unused_columns(self):
-        self.train_set = self.train_set.map()
+        self.train_set = self.train_set.map(remove_source_from_news, batched=True)
+        self.train_set_tok = self.train_set.map(self.tokenize, batched=True, remove_columns=col_names_to_remove)
+        self.val_set = self.val_set.map(remove_source_from_news, batched=True)
+        self.val_set_tok = self.val_set.map(self.tokenize, batched=True, remove_columns=col_names_to_remove)
+        self.test_set = self.test_set.map(remove_source_from_news, batched=True)
+        self.test_set_tok = self.test_set.map(self.tokenize, batched=True, remove_columns=col_names_to_remove)
 
     def save_dataset(self):
         self.train_set.save_to_disk('dataset_edited/train.hf')
+        self.train_set_tok.save_to_disk('dataset_edited/train_tok.hf')
         self.val_set.save_to_disk('dataset_edited/val.hf')
+        self.val_set_tok.save_to_disk('dataset_edited/val_tok.hf')
         self.test_set.save_to_disk('dataset_edited/test.hf')
+        self.test_set_tok.save_to_disk('dataset_edited/test_tok.hf')
+
+
+def remove_source_from_news(dataset):
+    regex_pattern = r'.*(((\(Reuters\))|(\(REUTERS\))) - )'
+    texts = dataset['text']
+    texts = [re.sub(regex_pattern, '', text) for text in texts]
+    dataset['text'] = texts
+    return dataset
 
 
 def custom_preprocess(self, inputs, **tokenizer_kwargs):
