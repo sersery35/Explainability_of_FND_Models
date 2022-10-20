@@ -14,5 +14,5 @@ data/data/README.md
 *.ipynb_checkpoints/*
 GNNFakeNews/data/fakenewsnet_dataset/*
 GNNFakeNews/models/cased_L-24_H-1024_A-16/*
-Huggingface/notebooks/dataset_edited/*.hf/*
+Huggingface/notebooks/dataset_edited/*
 Huggingface/notebooks/results/*
