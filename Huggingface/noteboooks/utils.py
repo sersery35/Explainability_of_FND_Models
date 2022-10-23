@@ -91,9 +91,11 @@ class ModelManager:
     class that loads all models from Huggingface and manages various tasks
     """
 
-    def __init__(self, model_type: TransformersModelTypeEnum):
+    def __init__(self, model_type: TransformersModelTypeEnum, device='cpu'):
+        # clear cache before starting
+        torch.cuda.empty_cache()
         model_name = model_type.value['NAME']
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and device != 'cpu':
             device = torch.device('cuda')
         else:
             device = torch.device('cpu')
@@ -105,18 +107,19 @@ class ModelManager:
             self.pipeline = FakeNewsPipelineForHamzaB(model=self.model, tokenizer=self.tokenizer,
                                                       return_all_scores=True,
                                                       device=0)
+            self.pipeline.preprocess = types.MethodType(custom_preprocess, self.pipeline)
         elif model_type == TransformersModelTypeEnum.DISTILBERT_VANILLA:
             self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
-            self.pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer,
-                                                       return_all_scores=True,
-                                                       device=0)
+            # self.pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer,
+            #                                           return_all_scores=True,
+            #                                           device=0)
         else:
             self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
             self.pipeline = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer,
                                                        return_all_scores=True,
                                                        device=0)
-        # force the pipeline preprocess to truncate the outputs for convenience
-        self.pipeline.preprocess = types.MethodType(custom_preprocess, self.pipeline)
+            # force the pipeline preprocess to truncate the outputs for convenience
+            self.pipeline.preprocess = types.MethodType(custom_preprocess, self.pipeline)
         self.metric = load_metric('accuracy')
         self.trainer = None
 
