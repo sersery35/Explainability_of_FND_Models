@@ -1,11 +1,6 @@
-import types
 import matplotlib.pyplot as plt
 import numpy as np
-import shap.models
-import torch
-from transformers import AutoTokenizer, TextClassificationPipeline, AutoModelForSequenceClassification
 import shap
-import re
 
 # for interactive plots
 shap.initjs()

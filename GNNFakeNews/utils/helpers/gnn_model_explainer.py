@@ -113,9 +113,9 @@ class GNNModelExplainer:
         ax0, self.subgraph = self.gnn_explainer.visualize_subgraph(node_idx=self.node_idx,
                                                                    edge_index=self.sample_data.edge_index.cpu(),
                                                                    edge_mask=self.edge_mask.cpu(),
-                                                                   node_size=300,
+                                                                   node_size=500,
                                                                    # y=y,
-                                                                   font_size=8)
+                                                                   font_size=10)
 
         plt.axis('off')
         if save_as is not None:
@@ -137,9 +137,9 @@ class GNNModelExplainer:
                                                                                  .cpu(),
                                                                                  edge_mask=self.edge_mask[
                                                                                      indexes].cpu(),
-                                                                                 node_size=300,
+                                                                                 node_size=500,
                                                                                  # y=y,
-                                                                                 font_size=8, )
+                                                                                 font_size=10, )
 
         # node_color=node_colors)
         print(f'Number of nodes before dropping unimportant edges: {self.subgraph.number_of_nodes()}')

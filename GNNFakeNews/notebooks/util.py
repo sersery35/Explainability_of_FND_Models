@@ -3,6 +3,7 @@ from typing import Union
 import networkx as nx
 import torch_geometric.data
 import matplotlib.pyplot as plt
+from matplotlib.colors import CSS4_COLORS
 from torch_geometric.utils.convert import to_networkx, from_networkx
 from torch_geometric.data import Data
 
@@ -117,11 +118,11 @@ def visualize_sample(sample: Union[nx.Graph, nx.DiGraph, torch_geometric.data.Da
         sample = from_networkx(sample)
     default_edge_color = ['black'] * sample.edge_index.size(1)
     pos = nx.spring_layout(G, seed=10)
-    nx.draw_networkx_nodes(G, pos, node_size=300, cmap='cool')
+    nx.draw_networkx_nodes(G, pos, node_size=500, cmap='cool')
 
     nx.draw_networkx_edges(G, pos, edge_color=default_edge_color)
 
-    nx.draw_networkx_labels(G, pos, font_size=8)
+    nx.draw_networkx_labels(G, pos, font_size=10)
     if save_fig is not None:
         plt.savefig(f'plot_images/{save_fig}.pdf', bbox_inches='tight')
     plt.show()
@@ -195,14 +196,15 @@ def normalize_text(text):
     return remove_special_chars(text)
 
 
-def plot_label_distribution(ax, labels, fake_color, real_color, label):
+def plot_label_distribution(ax, ds, fake_color, real_color, label):
     fake_news = []
     real_news = []
-    for l in labels:
-        if l == 'Fake':
-            fake_news.append(l)
+    for data in ds:
+        if data.y.cpu().numpy()[0] == 0:
+            # print('Fake news')
+            fake_news.append(0)
         else:
-            real_news.append(l)
+            real_news.append(1)
     print(f'len fake news {len(fake_news)}')
     print(f'len real news {len(real_news)}')
     height_offsets = {'fake': 0, 'real': 0}
@@ -218,9 +220,12 @@ def plot_label_distribution(ax, labels, fake_color, real_color, label):
 
 def plot_dataset_label_distribution_by_split(train_ds, val_ds, test_ds, save_fig=None):
     fig, ax = plt.subplots(figsize=(12, 8))
-    plot_label_distribution(ax, train_ds, fake_color='yellow', real_color='yellow', label='train')
-    plot_label_distribution(ax, val_ds, fake_color='lime', real_color='lime', label='validation')
-    plot_label_distribution(ax, test_ds, fake_color='orange', real_color='orange', label='test')
+    plot_label_distribution(ax, train_ds, fake_color=CSS4_COLORS.get('dodgerblue'),
+                            real_color=CSS4_COLORS.get('dodgerblue'), label='train')
+    plot_label_distribution(ax, val_ds, fake_color=CSS4_COLORS.get('darkgreen'),
+                            real_color=CSS4_COLORS.get('darkgreen'), label='validation')
+    plot_label_distribution(ax, test_ds, fake_color=CSS4_COLORS.get('crimson'), real_color=CSS4_COLORS.get('crimson'),
+                            label='test')
 
     print(f'Total len: {len(train_ds) + len(val_ds) + len(test_ds)}')
 
