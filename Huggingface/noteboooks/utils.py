@@ -120,7 +120,10 @@ class ModelManager:
                                                        device=0)
             # force the pipeline preprocess to truncate the outputs for convenience
             self.pipeline.preprocess = types.MethodType(custom_preprocess, self.pipeline)
-        self.metric = load_metric('accuracy')
+        self.accuracy_metric = load_metric('accuracy')
+        self.precision_metric = load_metric('precision', average='macro')
+        self.recall_metric = load_metric('recall', average='macro')
+        self.f1_metric = load_metric('f1', average='macro')
         self.trainer = None
 
     @staticmethod
@@ -238,12 +241,15 @@ def predict_multiple_with_correct_labels(model_manager: ModelManager, texts: lis
 
 
 class FakeNewsExplainer:
-    def __init__(self, model: dict, explainer='deep'):
+    def __init__(self, model: dict, background: list, explainer='partition'):
         """Class handles all code heavy tasks and returns meaningful data and visualizations for convenience.
         Parameters
         ----------
         model: dict
-            a dict with following keys: 'NAME', 'LABEL_MAPPINGS', 'DATASET'
+            a dict with following keys: 'NAME', 'LAB
+            EL_MAPPINGS', 'DATASET'
+        background: list,
+            background data
         explainer: str,
             the algorithm for the explainer, defaults to 'deep' which calls a DeepExplainer for the model.
             if set to any other value, it will call the vanilla explainer of SHAP: shap.Explainer
@@ -261,12 +267,12 @@ class FakeNewsExplainer:
             samples = self.get_random_samples(n=200)
             print('Is model supported: ', shap.DeepExplainer.supports_model_with_masker(self.model, self.tokenizer))
             if shap.DeepExplainer.supports_model_with_masker(self.model, self.tokenizer):
-                self.explainer = shap.DeepExplainer(self.pipeline, samples)
+                self.explainer = shap.DeepExplainer(self.pipeline, background)
             else:
-                self.explainer = shap.Explainer(self.pipeline)
+                self.explainer = shap.Explainer(self.pipeline, masker=shap.maskers.Text(self.tokenizer))
 
         else:
-            self.explainer = shap.Explainer(self.pipeline)
+            self.explainer = shap.Explainer(self.pipeline, masker=shap.maskers.Text(self.tokenizer))
 
     def load_model(self, model_name: str):
         """load model to the device and create the pipeline that will be used in the explanation
@@ -302,11 +308,11 @@ class FakeNewsExplainer:
         acc = load_metric('accuracy')
         acc_val = acc.compute(predictions=predictions, references=test_set_labels)
         prec = load_metric('precision')
-        prec_val = prec.compute(predictions=predictions, references=test_set_labels)
+        prec_val = prec.compute(predictions=predictions, references=test_set_labels, average='macro')
         rec = load_metric('recall')
-        rec_val = rec.compute(predictions=predictions, references=test_set_labels)
+        rec_val = rec.compute(predictions=predictions, references=test_set_labels, average='macro')
         f1 = load_metric('f1')
-        f1_val = f1.compute(predictions=predictions, references=test_set_labels)
+        f1_val = f1.compute(predictions=predictions, references=test_set_labels, average='macro')
         print('Test set results:')
         print(f'Accuracy: {acc_val}')
         print(f'Precision: {prec_val}')
@@ -332,16 +338,19 @@ class FakeNewsExplainer:
         ds = self.dataset.get(split)
         if should_contain_word != '':
             ds = ds.filter(lambda row: should_contain_word in row['text'])
-
+        # print(ds)
         if label is not None:
             assert label in [0, 1], 'please use only 0 or 1 as labels'
             ds = ds.filter(lambda row: row['label'] == label)
 
-        indexes = range(0, len(ds) - 1)
-        indexes = np.random.choice(indexes, size=n, replace=False)
-        print(f'Getting the indexes: {indexes}')
-        # can use shuffle and pick the first 200 as well, i.e., samples.shuffle()[:200]
-        random_samples = ds.select(indices=indexes)
+        if len(ds) > 1:
+            indexes = range(0, len(ds) - 1)
+            indexes = np.random.choice(indexes, size=n, replace=False)
+            print(f'Getting the indexes: {indexes}')
+            # can use shuffle and pick the first 200 as well, i.e., samples.shuffle()[:200]
+            random_samples = ds.select(indices=indexes)
+        else:
+            random_samples = ds
         # now we need to transform Huggingface dataset to a python list
         random_samples_pd = random_samples.to_pandas()
         return random_samples_pd['text'].values.tolist(), random_samples_pd['label'].values.tolist()
@@ -377,13 +386,15 @@ class FakeNewsExplainer:
                 print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<')
             if text_plot:
                 if save_as is not None:
-                    image_html = shap.plots.text(val[:, pred], display=False)
+                    # image_html = shap.plots.text(val[:, pred], display=False)
+                    image_html = shap.plots.text(val, display=False)
                     with open(f'plot_images/{save_as}_forceplot.html', 'w') as file:
                         file.write(image_html)
                     img_html = HTML(image_html)
                     ipython_display(img_html)
                 else:
-                    shap.plots.text(val[:, pred])
+                    # shap.plots.text(val[:, pred])
+                    shap.plots.text(val)
 
             if verbose:
                 print('#############################################################################################')

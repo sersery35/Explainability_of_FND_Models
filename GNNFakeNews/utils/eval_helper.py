@@ -41,8 +41,8 @@ def eval_deep(log, loader):
         f1_macro += f1_score(y, pred_y, average='macro') * size
         f1_micro += f1_score(y, pred_y, average='micro') * size
         f1 += f1_score(y, pred_y) * size
-        precision += precision_score(y, pred_y, zero_division=0) * size
-        recall += recall_score(y, pred_y, zero_division=0) * size
+        precision += precision_score(y, pred_y, zero_division=0, average='macro') * size
+        recall += recall_score(y, pred_y, zero_division=0, average='macro') * size
 
     auc = roc_auc_score(label_log, prob_log)
     ap = average_precision_score(label_log, prob_log)

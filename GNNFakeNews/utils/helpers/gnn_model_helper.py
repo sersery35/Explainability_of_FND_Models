@@ -156,7 +156,7 @@ class GNNModelHelper(torch.nn.Module):
         if self.verbose:
             print(f'Test set results: acc: {acc:.4f}, f1: {f1}, f1_macro: {f1_macro:.4f}, f1_micro: {f1_micro:.4f},'
                   f'precision: {precision:.4f}, recall: {recall:.4f}, auc: {auc:.4f}, ap: {ap:.4f}')
-        return acc, precision, recall, f1
+        return acc, precision, recall, f1_macro
 
     def _m_build_latent_space_values(self, layer: str, split: str):
         if layer == 'convolutional':
