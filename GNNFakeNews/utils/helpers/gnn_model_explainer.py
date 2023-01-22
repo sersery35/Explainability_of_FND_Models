@@ -185,7 +185,7 @@ class GNNModelExplainer:
         """
         scatter plot the edge mask obtained from GNNExplainer
         """
-        highlight_edges = highlight_edges or [[-1, -1]]
+        highlight_edges = highlight_edges if highlight_edges is not None else [[-1, -1]]
         edge_mask_np = self.edge_mask.cpu().numpy()
         sample_data_edge_index = self.sample_data.edge_index.clone().cpu().numpy()
         sg_data = build_input_from_subgraph(self.subgraph, self.sample_data)
@@ -195,22 +195,17 @@ class GNNModelExplainer:
 
         for col_idx in range(sample_data_edge_index.shape[1]):
             current_edge_idx = sample_data_edge_index[:, col_idx]
-            '''print('###########################')
-            print(current_edge_idx)
-            print(sg_data_edge_index)
-            print(np.isin(sg_data_edge_index.T, current_edge_idx).all(axis=1).any())
-            print(np.isin(highlight_edges, current_edge_idx).all(axis=1).any())
-            print('###########################')'''
 
             # collect edges that are in subgraph
-            if np.isin(sg_data_edge_index.T, current_edge_idx).all(axis=1).any() and np.isin(highlight_edges,
+            '''if np.isin(sg_data_edge_index.T, current_edge_idx).all(axis=1).any() and np.isin(highlight_edges,
                                                                                              current_edge_idx).all(
                 axis=1).any():
                 colors.append('green')
             elif np.isin(sg_data_edge_index.T, current_edge_idx).all(axis=1).any():
                 colors.append('orange')
             else:
-                colors.append('blue')
+                colors.append('blue')'''
+            colors.append('blue')
             labels.append(f'v_{current_edge_idx[0]},{current_edge_idx[1]}')
 
         plt.figure(figsize=(20, 50))
@@ -224,10 +219,40 @@ class GNNModelExplainer:
         return colors
 
     def visualize_edge_mask_for_subgraph(self, highlight_edges=None, save_fig=None):
-        highlight_edges = highlight_edges or [[-1, -1]]
+        highlight_edges = highlight_edges if highlight_edges is not None else [[-1, -1]]
         edge_mask_np = self.edge_mask.cpu().numpy()
         sample_data_edge_index = self.sample_data.edge_index.clone().cpu().numpy()
         sg_data = build_input_from_subgraph(self.subgraph, self.sample_data)
+        sg_data_edge_index = sg_data.edge_index.clone().cpu().numpy()
+        labels = []
+        heights = []
+        colors = []
+
+        for col_index in range(sg_data_edge_index.shape[1]):
+            current_edge_index = sg_data_edge_index[:, col_index]
+            if np.isin(highlight_edges, current_edge_index).all(axis=1).any():
+                colors.append('green')
+            else:
+                colors.append('blue')
+            # look for the position of the same edge index
+            position = (sample_data_edge_index.T == current_edge_index).all(axis=1)
+            edge_mask_value = edge_mask_np[position]
+            labels.append(f'v_{current_edge_index[0]},{current_edge_index[1]}')
+            heights.append(edge_mask_value[0])
+        plt.figure(figsize=(20, 8))
+        plt.bar(labels, height=heights, color=colors)
+
+        plt.title('Edge mask distribution')
+        plt.xticks(rotation=90)
+        if save_fig is not None:
+            plt.savefig(f'plot_images/{save_fig}.pdf', bbox_inches='tight')
+        plt.show()
+
+    def visualize_edge_mask_for_subgraph_with_threshold(self, highlight_edges=None, save_fig=None):
+        highlight_edges = highlight_edges if highlight_edges is not None else [[-1, -1]]
+        edge_mask_np = self.edge_mask.cpu().numpy()
+        sample_data_edge_index = self.sample_data.edge_index.clone().cpu().numpy()
+        sg_data = build_input_from_subgraph(self.subgraph_with_threshold, self.sample_data)
         sg_data_edge_index = sg_data.edge_index.clone().cpu().numpy()
         labels = []
         heights = []
